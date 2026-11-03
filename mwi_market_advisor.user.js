@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.1
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精準支援 2026 最新市場更新：4% 交易稅/牛鈴 18% 稅、官方 BinGap 價格檔位增量、強化裝備低流速精準預估 (+5/+7 慢速成交模型)、可交易區間限制、即時吃單/首檔搶先一鍵填入與排隊時薪試算。
+// @version      1.3.2
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。修復物品識別作用域避免誤抓側邊欄裝備，修復日均流速與耗時預估 (>1年異常)，精準支援 4% 交易稅/牛鈴 18% 稅、官方 BinGap 檔位增量、+5/+7 強化裝備低流速模型。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.1 (低流速裝備真實成交模型 + GitHub 同步引擎) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.2 (精準作用域與真實流速修復版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -179,8 +179,11 @@
         }
     }
 
-    // 強化等級分層流速計算：徹底修正 +5 / +7 裝備成交預估
     async function fetchItemHistory(cleanId, enhancementLevel = 0) {
+        if (!cleanId) {
+            return { dailyAvg: 2000, maxBurst: 0, burstDays: null, isBurstItem: false, isLowLiquidityGear: false };
+        }
+
         const cacheKey = `${cleanId}__${enhancementLevel}`;
         if (STATE.historyCache.has(cacheKey)) {
             return STATE.historyCache.get(cacheKey);
@@ -199,20 +202,13 @@
 
             if (volumes.length > 0 && tSpanDays > 0) {
                 const totalVol = volumes.reduce((a, b) => a + b, 0);
-                dailyAvg = totalVol / Math.max(1, tSpanDays);
+                dailyAvg = Math.round(totalVol / Math.max(1, tSpanDays));
             } else {
-                // 歷史無交易紀錄時的客觀流速兜底 (依強化等級衰減)
-                if (enhancementLevel >= 8) {
-                    dailyAvg = 0.15; // ~每 6-7 天 1 件
-                } else if (enhancementLevel >= 7) {
-                    dailyAvg = 0.5;  // ~每 2 天 1 件
-                } else if (enhancementLevel >= 5) {
-                    dailyAvg = 1.2;  // ~每天 1 檔成交
-                } else if (enhancementLevel >= 1) {
-                    dailyAvg = 3.0;  // ~每天 2-3 件
-                } else {
-                    dailyAvg = 15.0; // 白板裝備兜底
-                }
+                if (enhancementLevel >= 8) dailyAvg = 0.15;
+                else if (enhancementLevel >= 7) dailyAvg = 0.5;
+                else if (enhancementLevel >= 5) dailyAvg = 1.2;
+                else if (enhancementLevel >= 1) dailyAvg = 3.0;
+                else dailyAvg = 50.0;
             }
 
             const maxBurst = volumes.length > 0 ? Math.max(...volumes) : 0;
@@ -226,18 +222,22 @@
             }
 
             const isBurstItem = Boolean(bursts.length >= 3 && maxBurst >= 50000 && enhancementLevel === 0);
-            const isLowLiquidityGear = (enhancementLevel > 0 || dailyAvg < 5);
+            const isLowLiquidityGear = Boolean(enhancementLevel > 0 || (dailyAvg < 10 && !isBurstItem));
 
             const result = { dailyAvg, maxBurst, burstDays, isBurstItem, isLowLiquidityGear };
             STATE.historyCache.set(cacheKey, result);
             return result;
         } catch (e) {
-            // 若該強化等級無分片或 404，使用真實強化裝備流通模型
-            let dailyAvg = 15.0;
-            if (enhancementLevel >= 8) dailyAvg = 0.15;
-            else if (enhancementLevel >= 7) dailyAvg = 0.5;
-            else if (enhancementLevel >= 5) dailyAvg = 1.2;
-            else if (enhancementLevel >= 1) dailyAvg = 3.0;
+            // 嘗試檢查 snapshot 實時流速
+            const snapshotInfo = getItemMarketInfo(cleanId, enhancementLevel);
+            let dailyAvg = snapshotInfo?.volume ? (snapshotInfo.volume * 24) : 0;
+            if (!dailyAvg) {
+                if (enhancementLevel >= 8) dailyAvg = 0.15;
+                else if (enhancementLevel >= 7) dailyAvg = 0.5;
+                else if (enhancementLevel >= 5) dailyAvg = 1.2;
+                else if (enhancementLevel >= 1) dailyAvg = 3.0;
+                else dailyAvg = 1000.0; // 消耗品兜底
+            }
 
             const fallback = {
                 dailyAvg,
@@ -327,56 +327,89 @@
         });
     }
 
-    // ── 8. DOM 解析盤口、物品與強化等級 ────────────────────
-    function detectCurrentItemFromDOM() {
-        const useEl = document.querySelector('[class*="MarketplacePanel_itemContainer"] svg use') ||
-                      document.querySelector('svg use[href*="items_sprite"]');
-        if (useEl) {
-            const href = useEl.getAttribute("href") || useEl.getAttribute("xlink:href") || "";
-            if (href.includes("#") && !href.includes("coin")) {
-                return href.split("#").pop();
-            }
-        }
-        return STATE.currentItemId || "";
-    }
-
-    function detectCurrentEnhancementLevelFromDOM() {
-        // 1. 彈窗內的強化等級輸入框
-        const modal = document.querySelector('[class*="MarketplacePanel_modalContent"], [class*="Modal_modal"]');
-        if (modal) {
-            const enhanceInput = modal.querySelector('[class*="inputContainer"] input[type="number"]');
-            if (enhanceInput && enhanceInput.value !== "") {
-                const val = parseInt(enhanceInput.value, 10);
-                if (!isNaN(val)) return val;
-            }
-        }
-
-        // 2. 主面板當前物品圖標上的強化角標
+    // ── 8. 精準識別當前市場面板物品與強化等級 (嚴格隔離側邊欄) ─
+    function detectCurrentItemInfo() {
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-        if (marketPanel) {
-            const currentItem = marketPanel.querySelector('[class*="MarketplacePanel_currentItem"]');
-            if (currentItem) {
-                const levelEl = currentItem.querySelector('[class*="Item_enhancementLevel"]');
-                if (levelEl && levelEl.textContent) {
-                    const match = levelEl.textContent.match(/\+?(\d+)/);
-                    if (match) return parseInt(match[1], 10) || 0;
-                }
-            }
+        let itemId = "";
+        let enhancementLevel = 0;
 
-            // 3. React 內部狀態穿透
+        // 1. 最高優先級：直接從 MarketplacePanel 的 React Fiber 取得 (100% 精準無誤)
+        if (marketPanel) {
             const fiberKey = Object.keys(marketPanel).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
             if (fiberKey) {
                 let curr = marketPanel[fiberKey];
                 while (curr) {
-                    if (curr.stateNode && curr.stateNode.state && typeof curr.stateNode.state.enhancementLevel === 'number') {
-                        return curr.stateNode.state.enhancementLevel;
+                    if (curr.stateNode && curr.stateNode.state && curr.stateNode.state.itemHrid) {
+                        itemId = curr.stateNode.state.itemHrid.replace("/items/", "");
+                        enhancementLevel = typeof curr.stateNode.state.enhancementLevel === 'number'
+                            ? curr.stateNode.state.enhancementLevel
+                            : 0;
+                        break;
                     }
                     curr = curr.return;
                 }
             }
         }
 
-        return STATE.currentEnhancementLevel || 0;
+        // 2. 次優先級：若處於彈窗中，從彈窗內的物品圖標與強化輸入框取得
+        const modal = document.querySelector('[class*="MarketplacePanel_modalContent"], [class*="Modal_modal"]');
+        if (modal) {
+            if (!itemId) {
+                const useEl = modal.querySelector('[class*="itemContainer"] svg use, [class*="Item_item"] svg use');
+                if (useEl) {
+                    const href = useEl.getAttribute("href") || useEl.getAttribute("xlink:href") || "";
+                    if (href.includes("#") && !href.includes("coin")) {
+                        itemId = href.split("#").pop();
+                    }
+                }
+            }
+            const enhanceInput = modal.querySelector('[class*="inputContainer"] input[type="number"]');
+            if (enhanceInput && enhanceInput.value !== "") {
+                const val = parseInt(enhanceInput.value, 10);
+                if (!isNaN(val)) enhancementLevel = val;
+            }
+        }
+
+        // 3. 第三優先級：從 MarketplacePanel 的 currentItem (中央大圖標) 提取
+        if (!itemId && marketPanel) {
+            const currentItem = marketPanel.querySelector('[class*="MarketplacePanel_currentItem"]');
+            if (currentItem) {
+                const useEl = currentItem.querySelector('svg use');
+                if (useEl) {
+                    const href = useEl.getAttribute("href") || useEl.getAttribute("xlink:href") || "";
+                    if (href.includes("#") && !href.includes("coin")) {
+                        itemId = href.split("#").pop();
+                    }
+                }
+                const levelEl = currentItem.querySelector('[class*="Item_enhancementLevel"]');
+                if (levelEl && levelEl.textContent) {
+                    const match = levelEl.textContent.match(/\+?(\d+)/);
+                    if (match) enhancementLevel = parseInt(match[1], 10) || 0;
+                }
+            }
+        }
+
+        // 4. 第四優先級：WebSocket 攔截到的最新狀態
+        if (!itemId && STATE.currentItemId) {
+            itemId = STATE.currentItemId;
+        }
+
+        // 5. 確保非可強化物品 (如咖啡、茶、礦石、藥水、食材等) 之強化等級強制歸 0
+        if (itemId) {
+            const nonEnhanceableKeywords = [
+                "coffee", "tea", "ore", "bar", "ingot", "log", "lumber", "essence",
+                "gummy", "yogurt", "donut", "cake", "potion", "seed", "leaf",
+                "milk", "egg", "meat", "hide", "thread", "fabric", "fiber", "feather",
+                "scale", "tooth", "claw", "bone", "chest", "key", "scroll", "tome"
+            ];
+            if (nonEnhanceableKeywords.some(kw => itemId.includes(kw))) {
+                enhancementLevel = 0;
+            }
+        }
+
+        STATE.currentItemId = itemId;
+        STATE.currentEnhancementLevel = enhancementLevel;
+        return { itemId, enhancementLevel };
     }
 
     function parseOrderBookFromDOM() {
@@ -429,11 +462,7 @@
         const isBuy = /购买|買入|buy/i.test(headerText);
         const modalType = isBuy ? "BUY" : "SELL";
 
-        let enhancementLevel = detectCurrentEnhancementLevelFromDOM();
-        const enhanceInput = modal.querySelector('[class*="inputContainer"] input[type="number"]');
-        if (enhanceInput && enhanceInput.value !== "") {
-            enhancementLevel = parseInt(enhanceInput.value, 10) || 0;
-        }
+        const { enhancementLevel } = detectCurrentItemInfo();
 
         let currentPrice = 0;
         const priceInputsContainer = modal.querySelector('[class*="MarketplacePanel_priceInputs"], [class*="priceInputs"]');
@@ -531,14 +560,13 @@
         return true;
     }
 
-    // ── 11. 核心決策演算法 (強化裝備低流速精準預估) ─────────
+    // ── 11. 核心決策演算法 (流速依商品屬性精準計算) ─────────
     function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
         const { modalType, isBuy, enhancementLevel, currentPrice, currentQty, bandMin, bandMax } = modalState;
 
-        // 計算精準小時流速：對低流速裝備允許 blendedVol < 1，徹底解決虛假 "< 2 分鐘"
-        const dailyAvg = historyInfo ? historyInfo.dailyAvg : (enhancementLevel >= 5 ? 1.0 : 20.0);
-        const hourlyVol = dailyAvg / 24;
-        const blendedVol = Math.max(0.005, hourlyVol); // 允許低至每天 0.12 件之極低流通度
+        const dailyAvg = (historyInfo && historyInfo.dailyAvg > 0) ? historyInfo.dailyAvg : (enhancementLevel > 0 ? 1.0 : 2000.0);
+        const histHourly = dailyAvg / 24;
+        const blendedVol = enhancementLevel > 0 ? Math.max(0.005, histHourly) : Math.max(1, histHourly);
         const taxRate = getItemTaxRate(itemHrid);
 
         const bestAsk = asks.length > 0 ? asks[0].price : null;
@@ -737,11 +765,8 @@
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
         if (!marketPanel) return;
 
-        const itemId = detectCurrentItemFromDOM();
+        const { itemId, enhancementLevel } = detectCurrentItemInfo();
         if (!itemId) return;
-
-        const enhancementLevel = detectCurrentEnhancementLevelFromDOM();
-        STATE.currentEnhancementLevel = enhancementLevel;
 
         const historyInfo = await fetchItemHistory(itemId, enhancementLevel);
 
@@ -761,11 +786,11 @@
         if (!banner) {
             banner = document.createElement("div");
             banner.className = "mwi-advisor-top-banner";
-            const tableContainer = panel.querySelector('[class*="MarketplacePanel_tablesContainer"]') ||
-                                   panel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]') ||
-                                   panel.querySelector("table")?.closest("div");
-            if (tableContainer) {
-                tableContainer.parentElement.insertBefore(banner, tableContainer);
+            const orderBooksContainer = panel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]') ||
+                                        panel.querySelector('[class*="MarketplacePanel_tablesContainer"]') ||
+                                        panel.querySelector("table")?.closest("div");
+            if (orderBooksContainer) {
+                orderBooksContainer.parentElement.insertBefore(banner, orderBooksContainer);
             } else {
                 panel.appendChild(banner);
             }
@@ -774,6 +799,7 @@
         const spreadGold = (bestAsk && bestBid) ? (bestAsk - bestBid) : 0;
         const spreadPct = (bestAsk && bestBid && bestAsk > 0) ? ((spreadGold / bestAsk) * 100).toFixed(1) : 0;
         const taxRate = getItemTaxRate(itemId);
+        const dailyAvg = (historyInfo && typeof historyInfo.dailyAvg === 'number') ? historyInfo.dailyAvg : 0;
 
         let burstCardHtml = "";
         if (historyInfo?.isBurstItem) {
@@ -787,7 +813,7 @@
             burstCardHtml = `
                 <div class="mwi-adv-gear-pill">
                     <span>⏳ 低流速裝備特性</span>: 
-                    <b>+${enhancementLevel} 級裝備全服日均成交僅約 ${historyInfo.dailyAvg.toFixed(1)} 件，掛單週期偏長，請謹慎評估排隊時薪！</b>
+                    <b>+${enhancementLevel} 級裝備全服日均成交僅約 ${dailyAvg.toFixed(1)} 件，掛單週期偏長，請謹慎評估排隊時薪！</b>
                 </div>
             `;
         }
@@ -795,7 +821,7 @@
         let recText = "";
         let recStyle = "";
         if (historyInfo?.isLowLiquidityGear) {
-            recText = `⚠️ 低流通度裝備：日均成交僅約 ${historyInfo.dailyAvg.toFixed(1)} 件。若排在第二檔之後容易長期滯銷，推薦直接吃單或掛在首檔耐心等待。`;
+            recText = `⚠️ 低流通度裝備：日均成交僅約 ${dailyAvg.toFixed(1)} 件。若排在第二檔之後容易長期滯銷，推薦直接吃單或掛在首檔耐心等待。`;
             recStyle = "background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #fcd34d;";
         } else if (historyInfo?.isBurstItem) {
             recText = "🌊 大單週期型商品：平時零星散買，但每隔數天有集中大掃貨，強烈建議掛在首檔阻力位等待！";
@@ -823,7 +849,7 @@
                         盤口價差: <b>${bestBid || "--"}</b> ↔ <b>${bestAsk || "--"}</b> (差 <b>${spreadGold}G</b>, <b>${spreadPct}%</b>)
                     </span>
                     <span class="mwi-adv-tag" style="color: #38bdf8; border-color: #0284c7;">
-                        全服日均: <b>${historyInfo.dailyAvg >= 10 ? formatNumber(historyInfo.dailyAvg) : historyInfo.dailyAvg.toFixed(1)}/天</b>
+                        全服日均: <b>${dailyAvg >= 10 ? formatNumber(dailyAvg) : dailyAvg.toFixed(1)}/天</b>
                     </span>
                 </div>
             </div>
@@ -835,9 +861,16 @@
     }
 
     function decorateOrderRows(asks, bids, historyInfo, enhancementLevel) {
-        const dailyAvg = historyInfo ? historyInfo.dailyAvg : (enhancementLevel >= 5 ? 1.0 : 20.0);
-        const hourlyVol = dailyAvg / 24;
-        const blendedVol = Math.max(0.005, hourlyVol);
+        const itemInfo = getItemMarketInfo(STATE.currentItemId, enhancementLevel);
+        const snapshotHourly = itemInfo?.volume || 0;
+        const histDaily = (historyInfo && typeof historyInfo.dailyAvg === 'number' && historyInfo.dailyAvg > 0)
+            ? historyInfo.dailyAvg
+            : (enhancementLevel > 0 ? 1.0 : (snapshotHourly > 0 ? snapshotHourly * 24 : 2000.0));
+        
+        const histHourly = histDaily / 24;
+        const blendedVol = enhancementLevel > 0
+            ? Math.max(0.005, histHourly)
+            : Math.max(1, (histHourly * 0.75 + (snapshotHourly || histHourly) * 0.25));
 
         let aheadAsk = 0;
         asks.forEach((order, idx) => {
@@ -915,9 +948,8 @@
         const targetParent = priceInputsContainer?.closest('[class*="inputContainer"]') || priceInputsContainer?.parentElement || modal;
         targetParent.after(calcContainer);
 
-        const itemId = detectCurrentItemFromDOM();
-        const initialLevel = detectCurrentEnhancementLevelFromDOM();
-        const historyInfo = await fetchItemHistory(itemId, initialLevel);
+        const { itemId, enhancementLevel } = detectCurrentItemInfo();
+        const historyInfo = await fetchItemHistory(itemId, enhancementLevel);
 
         const updateCalc = async () => {
             const modalState = getModalState(modal);

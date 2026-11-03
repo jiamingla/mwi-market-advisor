@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.2
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。修復物品識別作用域避免誤抓側邊欄裝備，修復日均流速與耗時預估 (>1年異常)，精準支援 4% 交易稅/牛鈴 18% 稅、官方 BinGap 檔位增量、+5/+7 強化裝備低流速模型。
+// @version      1.3.3
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。修復物品識別作用域避免誤抓側邊欄裝備，修復日均流速與耗時預估 (>1年異常)，精準支援 4% 交易稅/牛鈴 18% 稅、官方 BinGap 檔位增量、+5/+7 強化裝備低流速模型、全場景自動化測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.2 (精準作用域與真實流速修復版) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.3 (全場景測試與規則對齊版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {

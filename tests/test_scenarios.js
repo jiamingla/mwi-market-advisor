@@ -12,6 +12,8 @@ const {
     formatTime,
     calculateTradeDecision,
     isMarketplaceOrderModal,
+    isOrderBookView,
+    cleanupAdvisorOverlay,
     calculateSpreadGap
 } = require("./advisorEngine");
 
@@ -446,6 +448,94 @@ describe("情境 8：盤口斷檔真空與做市插隊試算 (Spread Gap Engine)
         assert.strictEqual(calculateSpreadGap(60, 60, 0, "birch_log"), null);
         assert.strictEqual(calculateSpreadGap(50, 60, 0, "birch_log"), null);
         assert.strictEqual(calculateSpreadGap(null, 60, 0, "birch_log"), null);
+    });
+
+    it("8.5 僅有單檔真空 (62 vs 64): 買賣雙方搶首位價重合在 63G", () => {
+        const gap = calculateSpreadGap(64, 62, 0, "birch_log");
+        assert.ok(gap !== null);
+        assert.strictEqual(gap.gapCount, 1);
+        assert.deepStrictEqual(gap.gapTicks, [63]);
+        assert.strictEqual(gap.topMakerBid, 63);
+        assert.strictEqual(gap.topMakerAsk, 63);
+    });
+});
+
+// ────────────────────────────────────────────────────────
+describe("情境 9：市場視圖嚴格隔離 (我的掛單 / 全部物資 / 強化一覽 絕不顯速查卡)", () => {
+    it("9.1 處於「我的掛單 (myListings)」視圖時，isOrderBookView 應判定為 false", () => {
+        const myListingsPanel = {
+            offsetParent: {},
+            querySelector: (sel) => {
+                if (sel.includes("MarketplacePanel_myListings")) return {};
+                if (sel.includes("MarketplacePanel_orderBooksContainer")) return null;
+                return null;
+            }
+        };
+        assert.strictEqual(isOrderBookView(myListingsPanel), false);
+    });
+
+    it("9.2 處於「物資選擇目錄 (itemSelection)」視圖時，isOrderBookView 應判定為 false", () => {
+        const itemSelectionPanel = {
+            offsetParent: {},
+            querySelector: (sel) => {
+                if (sel.includes("MarketplacePanel_itemSelection")) return {};
+                return null;
+            }
+        };
+        assert.strictEqual(isOrderBookView(itemSelectionPanel), false);
+    });
+
+    it("9.3 處於「強化等級一覽 (itemSummary)」視圖時，isOrderBookView 應判定為 false", () => {
+        const itemSummaryPanel = {
+            offsetParent: {},
+            querySelector: (sel) => {
+                if (sel.includes("MarketplacePanel_itemSummaryTableContainer")) return {};
+                return null;
+            }
+        };
+        assert.strictEqual(isOrderBookView(itemSummaryPanel), false);
+    });
+
+    it("9.4 處於真實「訂單簿 (OrderBook)」視圖時，isOrderBookView 應判定為 true", () => {
+        const orderBookPanel = {
+            offsetParent: {},
+            querySelector: (sel) => {
+                if (sel.includes("MarketplacePanel_orderBooksContainer")) return {};
+                return null;
+            }
+        };
+        assert.strictEqual(isOrderBookView(orderBookPanel), true);
+    });
+
+    it("9.5 cleanupAdvisorOverlay 能徹底清除速查卡、跨度條與殘留標籤", () => {
+        let removedItems = [];
+        const mockDom = {
+            querySelectorAll: (sel) => {
+                if (sel === ".mwi-advisor-top-banner") return [{ remove: () => removedItems.push("banner") }];
+                if (sel === ".mwi-adv-spread-bridge-bar") return [{ remove: () => removedItems.push("bridge-bar") }];
+                if (sel === ".mwi-adv-row-badge") return [{ remove: () => removedItems.push("row-badge") }];
+                if (sel === ".mwi-adv-snip-tag") return [{ remove: () => removedItems.push("snip-tag") }];
+                if (sel === ".mwi-adv-my-tag") return [{ remove: () => removedItems.push("my-tag") }];
+                if (sel === ".mwi-adv-my-order-highlight") return [{ classList: { remove: (c) => removedItems.push(c) } }];
+                return [];
+            }
+        };
+        cleanupAdvisorOverlay(mockDom);
+        assert.deepStrictEqual(removedItems, ["banner", "bridge-bar", "row-badge", "snip-tag", "my-tag", "mwi-adv-my-order-highlight"]);
+    });
+
+    it("9.6 即時吃單彈窗 (Buy Now / 即刻購買) 正確識別為有效市場掛單彈窗", () => {
+        const instantBuyModal = {
+            matches: sel => sel.includes("MarketplacePanel_modalContent"),
+            querySelector: sel => {
+                if (sel.includes("priceInputs")) return {};
+                if (sel.includes("quantityInputs")) return {};
+                if (sel.includes("header") || sel.includes("Modal_header")) return { textContent: "Buy Now" };
+                return null;
+            },
+            textContent: "Buy Now Price: 68 Quantity: 10"
+        };
+        assert.strictEqual(isMarketplaceOrderModal(instantBuyModal), true);
     });
 });
 

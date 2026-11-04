@@ -31,7 +31,7 @@ def run_e2e_test():
     
     driver = webdriver.Chrome(options=options)
     passed_tests = 0
-    total_tests = 5
+    total_tests = 6
 
     try:
         # 1. 載入模擬遊戲 DOM
@@ -63,14 +63,14 @@ def run_e2e_test():
         driver.execute_script(mock_api_script)
 
         # 3. 注入 MWI 交易決策顧問油猴腳本 (完全同真實瀏覽器運行)
-        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.5)...")
+        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.6)...")
         driver.execute_script(userscript_code)
         time.sleep(1)
 
         # ───────────────────────────────────────────────────────────
         # 測試 1：進入木工製作面板，打開「製作樺木木板」彈窗
         # ───────────────────────────────────────────────────────────
-        print("\n🧪 [測試 1/5] 木工技能：點擊「製作樺木木板」打開彈窗")
+        print("\n🧪 [測試 1/6] 木工技能：點擊「製作樺木木板」打開彈窗")
         btn_craft_birch = driver.find_element(By.ID, "btn-craft-birch")
         btn_craft_birch.click()
         time.sleep(0.5)
@@ -90,7 +90,7 @@ def run_e2e_test():
         # ───────────────────────────────────────────────────────────
         # 測試 2：在彈窗中選擇「第二次木板（雪松木板）」(精確重現使用者遇到的 Bug 情境)
         # ───────────────────────────────────────────────────────────
-        print("\n🧪 [測試 2/5] (核心重現) 在製作彈窗內切換「第二次木板（雪松木板）」")
+        print("\n🧪 [測試 2/6] (核心重現) 在製作彈窗內切換「第二次木板（雪松木板）」")
         btn_select_second = driver.find_element(By.ID, "btn-select-second-plank")
         btn_select_second.click()
         time.sleep(0.5)
@@ -116,7 +116,7 @@ def run_e2e_test():
         # ───────────────────────────────────────────────────────────
         # 測試 3：切換到「市場交易」，驗證市場面板正常獲得增強 (橫幅與深度標籤)
         # ───────────────────────────────────────────────────────────
-        print("\n🧪 [測試 3/5] 切換至「市場交易」面板")
+        print("\n🧪 [測試 3/6] 切換至「市場交易」面板")
         nav_market = driver.find_element(By.ID, "nav-marketplace")
         nav_market.click()
         
@@ -154,38 +154,65 @@ def run_e2e_test():
         passed_tests += 1
 
         # ───────────────────────────────────────────────────────────
-        # 測試 4：在市場點擊「購買掛牌」，驗證掛單彈窗正確注入試算器與一鍵填入功能
+        # 測試 4 (重大回歸)：切換至「我的掛單 (My Listings)」，驗證速查卡與跨度條 100% 徹底清除
         # ───────────────────────────────────────────────────────────
-        print("\n🧪 [測試 4/5] 市場操作：點擊「購買掛牌」打開掛單彈窗")
-        btn_open_buy = driver.find_element(By.ID, "btn-open-buy-modal")
-        btn_open_buy.click()
+        print("\n🧪 [測試 4/6] 核心回歸：切換至「我的掛單」，驗證絕不出現不該出現的速查卡")
+        tab_my_listings = driver.find_element(By.ID, "tab-market-my-listings")
+        tab_my_listings.click()
+        time.sleep(1) # 等待 MutationObserver 與 setInterval 執行
 
-        calcs_step4 = []
-        for _ in range(10):
-            calcs_step4 = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-modal-calc")
-            if len(calcs_step4) >= 1:
-                break
-            time.sleep(0.3)
+        banners_my_listings = driver.find_elements(By.CSS_SELECTOR, ".mwi-advisor-top-banner")
+        bridges_my_listings = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-spread-bridge-bar")
+        cards_my_listings = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-side-card")
 
-        screenshot_step4 = os.path.join(screenshots_dir, "step4_marketplace_buy_modal.png")
+        screenshot_step4 = os.path.join(screenshots_dir, "step4_my_listings_clean.png")
         driver.save_screenshot(screenshot_step4)
         print(f"   📸 截圖保存: {screenshot_step4}")
 
-        assert len(calcs_step4) == 1, f"市場購買彈窗未正確注入試算器，當前數量: {len(calcs_step4)}"
-        calc_text = calcs_step4[0].text
+        assert len(banners_my_listings) == 0, f"「我的掛單」中誤殘留/注入了速查卡頂部橫幅！數量: {len(banners_my_listings)}"
+        assert len(bridges_my_listings) == 0, f"「我的掛單」中誤殘留/注入了斷檔跨度指示條！數量: {len(bridges_my_listings)}"
+        assert len(cards_my_listings) == 0, f"「我的掛單」中誤殘留/注入了雙向速查決策卡！數量: {len(cards_my_listings)}"
+        print("   ✅ [PASS] 測試 4 通過：「我的掛單」完全無速查卡與跨度條殘留，百分之百乾淨！")
+        passed_tests += 1
+
+        # 切回「市場行情」，驗證顧問覆蓋元件重新正常掛載
+        tab_orderbook = driver.find_element(By.ID, "tab-market-orderbook")
+        tab_orderbook.click()
+        time.sleep(1)
+
+        # ───────────────────────────────────────────────────────────
+        # 測試 5：在市場點擊「購買掛牌」，驗證掛單彈窗正確注入試算器與一鍵填入功能
+        # ───────────────────────────────────────────────────────────
+        print("\n🧪 [測試 5/6] 市場操作：點擊「購買掛牌」打開掛單彈窗")
+        btn_open_buy = driver.find_element(By.ID, "btn-open-buy-modal")
+        btn_open_buy.click()
+
+        calcs_step5 = []
+        for _ in range(10):
+            calcs_step5 = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-modal-calc")
+            if len(calcs_step5) >= 1:
+                break
+            time.sleep(0.3)
+
+        screenshot_step5 = os.path.join(screenshots_dir, "step5_marketplace_buy_modal.png")
+        driver.save_screenshot(screenshot_step5)
+        print(f"   📸 截圖保存: {screenshot_step5}")
+
+        assert len(calcs_step5) == 1, f"市場購買彈窗未正確注入試算器，當前數量: {len(calcs_step5)}"
+        calc_text = calcs_step5[0].text
         assert "掛單時間與收益實時試算" in calc_text, f"試算器標題缺失: {calc_text}"
         assert "填入吃單價" in calc_text, "一鍵填入吃單價按鈕缺失"
         assert "填入首檔搶先價" in calc_text, "一鍵填入首檔搶先價按鈕缺失"
         
         # 點擊「🎯 填入首檔搶先價」並驗證價格框聯動
-        top_btn = calcs_step4[0].find_element(By.CSS_SELECTOR, ".mwi-adv-quick-btn.maker")
+        top_btn = calcs_step5[0].find_element(By.CSS_SELECTOR, ".mwi-adv-quick-btn.maker")
         top_btn.click()
         time.sleep(0.3)
         market_price_val = driver.find_element(By.ID, "market-price-input").get_attribute("value")
         print(f"   點擊填入首檔搶先價後，價格輸入框值為: {market_price_val}")
         assert market_price_val == "63", f"預期首檔搶先價為 63，實際為: {market_price_val}"
 
-        print("   ✅ [PASS] 測試 4 通過：市場掛單彈窗精確注入試算器，且一鍵填入按鈕連動正常！")
+        print("   ✅ [PASS] 測試 5 通過：市場掛單彈窗精確注入試算器，且一鍵填入按鈕連動正常！")
         passed_tests += 1
 
         # 關閉市場彈窗
@@ -194,9 +221,9 @@ def run_e2e_test():
         time.sleep(0.3)
 
         # ───────────────────────────────────────────────────────────
-        # 測試 5：切換回木工技能，重複點擊與切換木板，驗證完全無殘留污染
+        # 測試 6：切換回木工技能，重複點擊與切換木板，驗證完全無殘留污染
         # ───────────────────────────────────────────────────────────
-        print("\n🧪 [測試 5/5] 防禦回歸：從市場切回木工，再次操作第二次木板")
+        print("\n🧪 [測試 6/6] 防禦回歸：從市場切回木工，再次操作第二次木板")
         nav_crafting = driver.find_element(By.ID, "nav-crafting")
         nav_crafting.click()
         time.sleep(0.5)
@@ -209,13 +236,13 @@ def run_e2e_test():
         # 驗證所有彈窗試算器與橫幅在木工視角下皆為 0 或不可見
         calcs_step5 = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-modal-calc")
         visible_banners = [b for b in driver.find_elements(By.CSS_SELECTOR, ".mwi-advisor-top-banner") if b.is_displayed()]
-        screenshot_step5 = os.path.join(screenshots_dir, "step5_back_to_crafting_clean.png")
-        driver.save_screenshot(screenshot_step5)
-        print(f"   📸 截圖保存: {screenshot_step5}")
+        screenshot_step6 = os.path.join(screenshots_dir, "step6_back_to_crafting_clean.png")
+        driver.save_screenshot(screenshot_step6)
+        print(f"   📸 截圖保存: {screenshot_step6}")
 
         assert len(calcs_step5) == 0, f"回歸失敗：再次進入木工面板後，發現殘留試算區塊! 數量: {len(calcs_step5)}"
         assert len(visible_banners) == 0, f"回歸失敗：在木工面板時，市場橫幅仍然意外可見! 數量: {len(visible_banners)}"
-        print("   ✅ [PASS] 測試 5 通過：跨面板切換完全無污染，狀態隔離百分之百健全！")
+        print("   ✅ [PASS] 測試 6 通過：跨面板切換完全無污染，狀態隔離百分之百健全！")
         passed_tests += 1
 
     except Exception as e:

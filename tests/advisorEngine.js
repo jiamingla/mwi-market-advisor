@@ -311,9 +311,57 @@ function isMarketplaceOrderModal(modal) {
     const hasQtyInputs = modal.querySelector && modal.querySelector('[class*="MarketplacePanel_quantityInputs"], [class*="quantityInputs"]') !== null;
     const headerEl = modal.querySelector ? modal.querySelector('[class*="MarketplacePanel_header"], [class*="Modal_header"], h2, h3') : null;
     const headerText = (headerEl?.textContent || "").trim();
-    const isOrderHeader = /(?:购买|買入|buy|出售|賣出|sell)\s*(?:挂牌|掛單|listing|order)/i.test(headerText) ||
+    const isOrderHeader = /(?:购买|買入|buy|出售|賣出|sell)/i.test(headerText) ||
+                          /(?:挂牌|掛單|listing|order)/i.test(headerText) ||
                           /(?:可交易区间|可交易區間|Tradable Range)/i.test(modal.textContent || "");
     return (isMarketModalClass || isInsideMarketPanel) && (hasPriceInputs || hasQtyInputs) && isOrderHeader;
+}
+
+function isElementVisible(el) {
+    if (!el) return false;
+    if (typeof el.offsetParent !== 'undefined') {
+        return el.offsetParent !== null;
+    }
+    if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) {
+        return false;
+    }
+    if (el.classList && (el.classList.contains && (el.classList.contains('hidden') || el.classList.contains('hide')))) {
+        return false;
+    }
+    return true;
+}
+
+// ── 判斷是否處於物品訂單簿視圖 (OrderBook View) ────────────────
+// 嚴格隔離「我的掛單 (myListings)」、「物資選擇 (itemSelection)」與「強化等級總覽 (itemSummary)」
+function isOrderBookView(marketPanel) {
+    if (!marketPanel || !isElementVisible(marketPanel)) return false;
+
+    // 必須包含可見的 orderBooksContainer 或 orderBook
+    const orderBooks = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_orderBooksContainer"], [class*="MarketplacePanel_orderBook"]') : null;
+    const hasOrderBooks = isElementVisible(orderBooks) || Boolean(marketPanel.hasOrderBooks);
+
+    // 絕不能處於可見的「我的掛單」、「物資選擇」或「強化等級一覽」
+    const myListings = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_myListings"]') : null;
+    const isMyListings = isElementVisible(myListings) || Boolean(marketPanel.isMyListings);
+
+    const itemSelection = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_itemSelection"]') : null;
+    const isItemSelection = isElementVisible(itemSelection) || Boolean(marketPanel.isItemSelection);
+
+    const itemSummary = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_itemSummaryTableContainer"]') : null;
+    const isItemSummary = isElementVisible(itemSummary) || Boolean(marketPanel.isItemSummary);
+
+    return hasOrderBooks && !isMyListings && !isItemSelection && !isItemSummary;
+}
+
+// ── 清除一切殘留的顧問覆蓋元件 (速查卡、跨度條、行徽章) ───────
+function cleanupAdvisorOverlay(scope = (typeof document !== 'undefined' ? document : null)) {
+    if (!scope || !scope.querySelectorAll) return;
+    scope.querySelectorAll(".mwi-advisor-top-banner").forEach(el => el.remove());
+    scope.querySelectorAll(".mwi-adv-spread-bridge-bar").forEach(el => el.remove());
+    scope.querySelectorAll(".mwi-adv-row-badge").forEach(el => el.remove());
+    scope.querySelectorAll(".mwi-adv-snip-tag").forEach(el => el.remove());
+    scope.querySelectorAll(".mwi-adv-my-tag").forEach(el => el.remove());
+    scope.querySelectorAll(".mwi-adv-my-order-highlight").forEach(el => el.classList?.remove("mwi-adv-my-order-highlight"));
 }
 
 // ── 盤口價差真空度與斷檔檔位試算 (Spread & Gap Engine) ───────
@@ -377,5 +425,7 @@ module.exports = {
     formatTime,
     calculateTradeDecision,
     isMarketplaceOrderModal,
+    isOrderBookView,
+    cleanupAdvisorOverlay,
     calculateSpreadGap
 };

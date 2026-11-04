@@ -167,43 +167,94 @@
 
         <!-- 2. Marketplace Panel (市場交易所面板) -->
         <div id="marketplace-panel" class="panel MarketplacePanel_marketplacePanel">
-            <div class="MarketplacePanel_headerSection">
-                <h2>市場買賣盤口</h2>
-                <div class="MarketplacePanel_currentItem">
-                    <svg width="32" height="32"><use href="#items_sprite-birch_log"></use></svg>
-                    <span style="font-weight: bold; margin-left: 8px;">樺木原木 (Birch Log)</span>
-                </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div style="margin: 10px 0;">
-                <button class="crafting-recipe-btn" id="btn-open-buy-modal" onclick="openMarketModal('BUY')" style="background: #059669;">
-                    購買掛牌
+            <div class="MarketplacePanel_tabsComponentContainer" style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <button class="crafting-recipe-btn active" id="tab-market-orderbook" onclick="switchMarketView('orderbook')" style="background: #2563eb;">
+                    市場行情 (Market)
                 </button>
-                <button class="crafting-recipe-btn" id="btn-open-sell-modal" onclick="openMarketModal('SELL')" style="background: #dc2626;">
-                    出售掛牌
+                <button class="crafting-recipe-btn" id="tab-market-my-listings" onclick="switchMarketView('my_listings')" style="background: #374151;">
+                    我的掛單 (My Listings)
                 </button>
             </div>
 
-            <!-- Order Books -->
-            <div class="MarketplacePanel_tablesContainer MarketplacePanel_orderBooksContainer">
-                <div>
-                    <h4>出售列表 (Asks)</h4>
-                    <table>
-                        <thead><tr><th>數量</th><th>單價</th></tr></thead>
-                        <tbody>
-                            <tr><td>250</td><td>68</td></tr>
-                            <tr><td>600</td><td>69</td></tr>
-                        </tbody>
-                    </table>
+            <!-- 視圖 A：訂單簿視圖 (OrderBook View) -->
+            <div id="market-view-orderbook" class="MarketplacePanel_orderBook">
+                <div class="MarketplacePanel_headerSection">
+                    <h2>市場買賣盤口</h2>
+                    <div class="MarketplacePanel_currentItem">
+                        <svg width="32" height="32"><use href="#items_sprite-birch_log"></use></svg>
+                        <span style="font-weight: bold; margin-left: 8px;">樺木原木 (Birch Log)</span>
+                    </div>
                 </div>
-                <div>
-                    <h4>收購列表 (Bids)</h4>
-                    <table>
-                        <thead><tr><th>數量</th><th>單價</th></tr></thead>
+
+                <!-- Action Buttons -->
+                <div style="margin: 10px 0;">
+                    <button class="crafting-recipe-btn" id="btn-open-buy-modal" onclick="openMarketModal('BUY')" style="background: #059669;">
+                        購買掛牌
+                    </button>
+                    <button class="crafting-recipe-btn" id="btn-open-sell-modal" onclick="openMarketModal('SELL')" style="background: #dc2626;">
+                        出售掛牌
+                    </button>
+                </div>
+
+                <!-- Order Books -->
+                <div class="MarketplacePanel_tablesContainer MarketplacePanel_orderBooksContainer">
+                    <div>
+                        <h4>出售列表 (Asks)</h4>
+                        <table>
+                            <thead><tr><th>數量</th><th>單價</th></tr></thead>
+                            <tbody>
+                                <tr><td>250</td><td>68</td></tr>
+                                <tr><td>600</td><td>69</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div>
+                        <h4>收購列表 (Bids)</h4>
+                        <table>
+                            <thead><tr><th>數量</th><th>單價</th></tr></thead>
+                            <tbody>
+                                <tr><td>400</td><td>62</td></tr>
+                                <tr><td>1,200</td><td>60</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 視圖 B：我的掛單視圖 (My Listings View) -->
+            <div id="market-view-my-listings" class="MarketplacePanel_myListings" style="display: none;">
+                <div class="MarketplacePanel_headerSection">
+                    <h2>我的市場掛單 (My Listings)</h2>
+                    <div class="MarketplacePanel_listingCount" style="color: #9ca3af; font-size: 13px;">
+                        掛單數量：2 / 10
+                    </div>
+                </div>
+                <div class="MarketplacePanel_myListingsTableContainer" style="margin-top: 15px;">
+                    <table class="MarketplacePanel_myListingsTable" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid #374151; color: #9ca3af; text-align: left;">
+                                <th style="padding: 6px;">狀態</th>
+                                <th style="padding: 6px;">類型</th>
+                                <th style="padding: 6px;">物品</th>
+                                <th style="padding: 6px;">價格</th>
+                                <th style="padding: 6px;">操作</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            <tr><td>400</td><td>62</td></tr>
-                            <tr><td>1,200</td><td>60</td></tr>
+                            <tr style="border-bottom: 1px solid #1f2937;">
+                                <td style="padding: 8px; color: #34d399;">掛單中</td>
+                                <td style="padding: 8px; color: #38bdf8;">買入</td>
+                                <td style="padding: 8px;">樺木原木 x 500</td>
+                                <td style="padding: 8px; font-weight: bold;">63 G</td>
+                                <td style="padding: 8px;"><button style="background: #ef4444; color: white; border: none; padding: 2px 6px; border-radius: 3px; cursor: pointer;">取消</button></td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #1f2937;">
+                                <td style="padding: 8px; color: #34d399;">掛單中</td>
+                                <td style="padding: 8px; color: #fbbf24;">出售</td>
+                                <td style="padding: 8px;">雪松木板 x 100</td>
+                                <td style="padding: 8px; font-weight: bold;">408 G</td>
+                                <td style="padding: 8px;"><button style="background: #ef4444; color: white; border: none; padding: 2px 6px; border-radius: 3px; cursor: pointer;">取消</button></td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -226,6 +277,26 @@
         } else {
             document.getElementById('marketplace-panel').classList.add('active');
             document.getElementById('nav-marketplace').classList.add('active');
+        }
+    }
+
+    // Market Sub-views (市場行情 vs 我的掛單)
+    function switchMarketView(viewName) {
+        const orderbookView = document.getElementById('market-view-orderbook');
+        const myListingsView = document.getElementById('market-view-my-listings');
+        const tabOrderbook = document.getElementById('tab-market-orderbook');
+        const tabMyListings = document.getElementById('tab-market-my-listings');
+
+        if (viewName === 'my_listings') {
+            orderbookView.style.display = 'none';
+            myListingsView.style.display = 'block';
+            tabMyListings.style.background = '#2563eb';
+            tabOrderbook.style.background = '#374151';
+        } else {
+            orderbookView.style.display = 'block';
+            myListingsView.style.display = 'none';
+            tabOrderbook.style.background = '#2563eb';
+            tabMyListings.style.background = '#374151';
         }
     }
 

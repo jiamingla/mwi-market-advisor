@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 [遠端即時熱重載 Loader]
 // @namespace    https://milkywayidle.com/
-// @version      1.3.5
+// @version      1.3.6
 // @description  遠端開發專用 Loader：在本地瀏覽器安裝一次，每次在遊戲按 F5 即可即時同步 GitHub 最新代碼！
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor

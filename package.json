@@ -1,6 +1,6 @@
 {
   "name": "mwi-market-advisor",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "Milky Way Idle Market Trade Advisor userscript and automated testing suite",
   "main": "tests/advisorEngine.js",
   "scripts": {

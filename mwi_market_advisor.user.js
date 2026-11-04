@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.5
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。新增頂部買賣家雙向速查卡、跨盤口斷檔幅度與插槽指示條、精準隔離非市場彈窗、全場景自動化 E2E 瀏覽器測試驗證。
+// @version      1.3.6
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精準限制僅於訂單簿視圖渲染速查卡與斷檔條，徹底杜絕「我的掛單/全部物資/強化一覽」及非市場彈窗誤注入，全場景自動化 E2E 瀏覽器測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.5 (買賣雙向速查與斷檔跨度條實裝版) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.6 (我的掛單與非訂單簿視圖徹底隔離版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -340,13 +340,61 @@
         const hasPriceInputs = modal.querySelector('[class*="MarketplacePanel_priceInputs"], [class*="priceInputs"]') !== null;
         const hasQtyInputs = modal.querySelector('[class*="MarketplacePanel_quantityInputs"], [class*="quantityInputs"]') !== null;
 
-        // 3. 檢查標題或內容是否包含掛單關鍵字 (避免誤判 製作/工藝/技能 等無關彈窗)
+        // 3. 檢查標題或內容是否包含掛單關鍵字 (避免誤判 製作/工藝/技能 等無關彈窗，同時兼容即時吃單/Buy Now)
         const headerEl = modal.querySelector('[class*="MarketplacePanel_header"], [class*="Modal_header"], h2, h3');
         const headerText = (headerEl?.textContent || "").trim();
-        const isOrderHeader = /(?:购买|買入|buy|出售|賣出|sell)\s*(?:挂牌|掛單|listing|order)/i.test(headerText) ||
+        const isOrderHeader = /(?:购买|買入|buy|出售|賣出|sell)/i.test(headerText) ||
+                              /(?:挂牌|掛單|listing|order)/i.test(headerText) ||
                               /(?:可交易区间|可交易區間|Tradable Range)/i.test(modal.textContent || "");
 
         return (isMarketModalClass || isInsideMarketPanel) && (hasPriceInputs || hasQtyInputs) && isOrderHeader;
+    }
+
+    function isElementVisible(el) {
+        if (!el) return false;
+        if (typeof el.offsetParent !== 'undefined') {
+            return el.offsetParent !== null;
+        }
+        if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) {
+            return false;
+        }
+        if (el.classList && (el.classList.contains('hidden') || el.classList.contains('hide'))) {
+            return false;
+        }
+        return true;
+    }
+
+    // ── 7.6 判斷是否處於物品「訂單簿視圖 (OrderBook)」 ─────────────
+    // 嚴格隔離「我的掛單 (myListings)」、「物資選擇 (itemSelection)」與「強化等級總覽 (itemSummary)」
+    function isOrderBookView(marketPanel) {
+        if (!marketPanel || !isElementVisible(marketPanel)) return false;
+
+        // 必須包含可見的 orderBooksContainer 或 orderBook
+        const orderBooks = marketPanel.querySelector('[class*="MarketplacePanel_orderBooksContainer"], [class*="MarketplacePanel_orderBook"]');
+        const hasOrderBooks = isElementVisible(orderBooks);
+
+        // 絕不能處於可見的「我的掛單」、「全部物資」或「強化等級一覽」
+        const myListings = marketPanel.querySelector('[class*="MarketplacePanel_myListings"]');
+        const isMyListings = isElementVisible(myListings);
+
+        const itemSelection = marketPanel.querySelector('[class*="MarketplacePanel_itemSelection"]');
+        const isItemSelection = isElementVisible(itemSelection);
+
+        const itemSummary = marketPanel.querySelector('[class*="MarketplacePanel_itemSummaryTableContainer"]');
+        const isItemSummary = isElementVisible(itemSummary);
+
+        return hasOrderBooks && !isMyListings && !isItemSelection && !isItemSummary;
+    }
+
+    // ── 7.7 清除一切顧問覆蓋元件 (速查卡、跨度條、行徽章) ─────────
+    function cleanupAdvisorOverlay(scope = document) {
+        if (!scope || !scope.querySelectorAll) return;
+        scope.querySelectorAll(".mwi-advisor-top-banner").forEach(el => el.remove());
+        scope.querySelectorAll(".mwi-adv-spread-bridge-bar").forEach(el => el.remove());
+        scope.querySelectorAll(".mwi-adv-row-badge").forEach(el => el.remove());
+        scope.querySelectorAll(".mwi-adv-snip-tag").forEach(el => el.remove());
+        scope.querySelectorAll(".mwi-adv-my-tag").forEach(el => el.remove());
+        scope.querySelectorAll(".mwi-adv-my-order-highlight").forEach(el => el.classList.remove("mwi-adv-my-order-highlight"));
     }
 
     // ── 8. 精準識別當前市場面板物品與強化等級 (嚴格隔離側邊欄與製作彈窗) ─
@@ -436,9 +484,12 @@
 
     function parseOrderBookFromDOM() {
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-        if (!marketPanel) return null;
+        if (!marketPanel || !isOrderBookView(marketPanel)) return null;
 
-        const tables = marketPanel.querySelectorAll("table");
+        const orderBooksContainer = marketPanel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]');
+        if (!orderBooksContainer) return null;
+
+        const tables = orderBooksContainer.querySelectorAll("table");
         if (tables.length < 2) return null;
 
         const askTable = tables[0]; // 左側出售列表 (Asks)
@@ -833,10 +884,16 @@
     // ── 12. 頂部決策看板與深度行標籤 ───────────────────────
     async function renderAdvisorOverlay() {
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-        if (!marketPanel || marketPanel.offsetParent === null) return;
+        if (!marketPanel || !isOrderBookView(marketPanel)) {
+            if (marketPanel) cleanupAdvisorOverlay(marketPanel);
+            return;
+        }
 
         const { itemId, enhancementLevel } = detectCurrentItemInfo();
-        if (!itemId) return;
+        if (!itemId) {
+            cleanupAdvisorOverlay(marketPanel);
+            return;
+        }
 
         const historyInfo = await fetchItemHistory(itemId, enhancementLevel);
 
@@ -855,18 +912,22 @@
     }
 
     function injectTopAdvisorBanner(panel, itemId, enhancementLevel, bestAsk, bestBid, historyInfo, gapInfo) {
+        if (!isOrderBookView(panel)) {
+            cleanupAdvisorOverlay(panel);
+            return;
+        }
+
+        const orderBooksContainer = panel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]');
+        if (!orderBooksContainer) {
+            cleanupAdvisorOverlay(panel);
+            return;
+        }
+
         let banner = panel.querySelector(".mwi-advisor-top-banner");
         if (!banner) {
             banner = document.createElement("div");
             banner.className = "mwi-advisor-top-banner";
-            const orderBooksContainer = panel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]') ||
-                                        panel.querySelector('[class*="MarketplacePanel_tablesContainer"]') ||
-                                        panel.querySelector("table")?.closest("div");
-            if (orderBooksContainer) {
-                orderBooksContainer.parentElement.insertBefore(banner, orderBooksContainer);
-            } else {
-                panel.appendChild(banner);
-            }
+            orderBooksContainer.parentElement.insertBefore(banner, orderBooksContainer);
         }
 
         const spreadGold = (bestAsk && bestBid) ? (bestAsk - bestBid) : 0;
@@ -974,23 +1035,21 @@
     // ── 12.5 表格第一行斷檔跨度指示條 (Spread Gap Bridge Bar) ───────
     function injectSpreadBridgeBar(panel, gapInfo) {
         let bar = panel.querySelector(".mwi-adv-spread-bridge-bar");
-        if (!gapInfo) {
+        if (!gapInfo || !isOrderBookView(panel)) {
             if (bar) bar.remove();
             return;
         }
 
-        const orderBooksContainer = panel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]') ||
-                                    panel.querySelector('[class*="MarketplacePanel_tablesContainer"]') ||
-                                    panel.querySelector("table")?.closest("div");
+        const orderBooksContainer = panel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]');
+        if (!orderBooksContainer) {
+            if (bar) bar.remove();
+            return;
+        }
 
         if (!bar) {
             bar = document.createElement("div");
             bar.className = "mwi-adv-spread-bridge-bar";
-            if (orderBooksContainer) {
-                orderBooksContainer.parentElement.insertBefore(bar, orderBooksContainer);
-            } else {
-                panel.appendChild(bar);
-            }
+            orderBooksContainer.parentElement.insertBefore(bar, orderBooksContainer);
         }
 
         let ticksHtml = "";
@@ -998,7 +1057,9 @@
             ticksHtml = `<div class="mwi-adv-ruler-tight">⚡ 連續相鄰檔位（無中間插隊空間）</div>`;
         } else if (gapInfo.gapCount <= 6) {
             ticksHtml = gapInfo.gapTicks.map(t => {
-                if (t === gapInfo.topMakerBid) {
+                if (t === gapInfo.topMakerBid && t === gapInfo.topMakerAsk) {
+                    return `<span class="mwi-adv-tick-node dual-snip" title="買賣雙方搶先價: ${t}G">⭐${t} (買/賣首位)</span>`;
+                } else if (t === gapInfo.topMakerBid) {
                     return `<span class="mwi-adv-tick-node buy-snip" title="買方搶先價: ${t}G">⭐${t} (買)</span>`;
                 } else if (t === gapInfo.topMakerAsk) {
                     return `<span class="mwi-adv-tick-node sell-snip" title="賣方搶先價: ${t}G">⭐${t} (賣)</span>`;
@@ -1112,6 +1173,12 @@
     // ── 13. 掛單彈窗實時試算器 (精準監控與一鍵填入) ─────────
     function setupModalObserver() {
         const observer = new MutationObserver(mutations => {
+            // 視圖切換即時守衛：若當前市場面板不處於 OrderBook 視圖 (例如切換至「我的掛單」或「全部物資」)，立即徹底清除顧問覆蓋元件
+            const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+            if (marketPanel && !isOrderBookView(marketPanel)) {
+                cleanupAdvisorOverlay(marketPanel);
+            }
+
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
                     if (node instanceof Element) {
@@ -1616,6 +1683,12 @@
                 color: #fbbf24;
                 border: 1px solid #f59e0b;
             }
+            .mwi-adv-tick-node.dual-snip {
+                background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(59, 130, 246, 0.3) 100%);
+                color: #38bdf8;
+                border: 1px solid #38bdf8;
+                font-weight: 700;
+            }
             .mwi-adv-tick-node.empty {
                 background: rgba(255, 255, 255, 0.04);
                 color: #64748b;
@@ -1650,7 +1723,13 @@
         setInterval(() => {
             const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
             if (marketPanel && marketPanel.offsetParent !== null) {
-                renderAdvisorOverlay();
+                if (isOrderBookView(marketPanel)) {
+                    renderAdvisorOverlay();
+                } else {
+                    cleanupAdvisorOverlay(marketPanel);
+                }
+            } else {
+                cleanupAdvisorOverlay(document);
             }
         }, 800);
 

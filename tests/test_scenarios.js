@@ -10,7 +10,8 @@ const {
     computeSellerNetPerItem,
     formatNumber,
     formatTime,
-    calculateTradeDecision
+    calculateTradeDecision,
+    isMarketplaceOrderModal
 } = require("./advisorEngine");
 
 let passed = 0;
@@ -340,6 +341,64 @@ describe("情境 6：時間與排隊時薪防禦格式化", () => {
         assert.strictEqual(formatNumber(8800), "8.8K");
         assert.strictEqual(formatNumber(2170000), "2.17M");
         assert.strictEqual(formatNumber(3500000000), "3.50B");
+    });
+});
+
+// ────────────────────────────────────────────────────────
+describe("情境 7：掛單彈窗嚴格識別與隔離防護 (防止污染木工/製作/非市場彈窗)", () => {
+    it("7.1 工藝/製作木板彈窗 (CraftingPanel_modalContent) 應判定為 false", () => {
+        const craftingModal = {
+            matches: sel => sel.includes("Modal_modal"),
+            querySelector: sel => {
+                if (sel.includes("Modal_header")) return { textContent: "製作木板" };
+                return null;
+            },
+            closest: () => null,
+            textContent: "製作木板 樺木木板 製作次數: 10"
+        };
+        assert.strictEqual(isMarketplaceOrderModal(craftingModal), false);
+    });
+
+    it("7.2 物品詳情/背包彈窗 (ItemDetails) 應判定為 false", () => {
+        const itemModal = {
+            matches: sel => sel.includes("Modal_modal"),
+            querySelector: sel => {
+                if (sel.includes("Modal_header")) return { textContent: "雪松木板" };
+                return null;
+            },
+            closest: () => null,
+            textContent: "雪松木板 - 高級木材，用於製作工具與裝備。"
+        };
+        assert.strictEqual(isMarketplaceOrderModal(itemModal), false);
+    });
+
+    it("7.3 市場購買掛牌彈窗 (包含價格輸入與購買標題) 應判定為 true", () => {
+        const marketBuyModal = {
+            matches: sel => sel.includes("MarketplacePanel_modalContent"),
+            querySelector: sel => {
+                if (sel.includes("MarketplacePanel_header") || sel.includes("Modal_header")) return { textContent: "购买挂牌" };
+                if (sel.includes("priceInputs")) return {};
+                if (sel.includes("quantityInputs")) return {};
+                return null;
+            },
+            closest: sel => sel.includes("MarketplacePanel_marketplacePanel") ? {} : null,
+            textContent: "购买挂牌 可交易区间：4336 – 5300 价格: 4,800"
+        };
+        assert.strictEqual(isMarketplaceOrderModal(marketBuyModal), true);
+    });
+
+    it("7.4 市場出售掛牌彈窗 (包含數量輸入與可交易區間) 應判定為 true", () => {
+        const marketSellModal = {
+            matches: sel => sel.includes("Modal_modal"),
+            querySelector: sel => {
+                if (sel.includes("MarketplacePanel_header") || sel.includes("Modal_header")) return { textContent: "出售挂牌" };
+                if (sel.includes("priceInputs")) return {};
+                return null;
+            },
+            closest: sel => sel.includes("MarketplacePanel_marketplacePanel") ? {} : null,
+            textContent: "出售挂牌 可交易区间：4336 – 5300 价格: 4,800"
+        };
+        assert.strictEqual(isMarketplaceOrderModal(marketSellModal), true);
     });
 });
 

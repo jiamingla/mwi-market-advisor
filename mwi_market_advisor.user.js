@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.3
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。修復物品識別作用域避免誤抓側邊欄裝備，修復日均流速與耗時預估 (>1年異常)，精準支援 4% 交易稅/牛鈴 18% 稅、官方 BinGap 檔位增量、+5/+7 強化裝備低流速模型、全場景自動化測試驗證。
+// @version      1.3.4
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精準限制掛單彈窗作用域，徹底杜絕製作/工藝/裝備等非市場彈窗誤注入，支援 4% 交易稅/牛鈴 18% 稅、官方 BinGap 檔位增量、+5/+7 強化裝備低流速模型、全場景自動化 E2E 瀏覽器測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.3 (全場景測試與規則對齊版) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.4 (彈窗精準隔離與 E2E 驗證版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -327,7 +327,29 @@
         });
     }
 
-    // ── 8. 精準識別當前市場面板物品與強化等級 (嚴格隔離側邊欄) ─
+    // ── 7.5 判斷是否為市場掛單彈窗 (嚴格隔離工藝/製作/裝備/技能等非市場彈窗) ─
+    function isMarketplaceOrderModal(modal) {
+        if (!modal || !(modal instanceof Element)) return false;
+
+        // 1. 必須具備 Marketplace 掛單彈窗標識或身處市場面板內
+        const isMarketModalClass = modal.matches?.('[class*="MarketplacePanel_modalContent"]') ||
+                                   modal.querySelector?.('[class*="MarketplacePanel_modalContent"]') !== null;
+        const isInsideMarketPanel = modal.closest?.('[class*="MarketplacePanel_marketplacePanel"]') !== null;
+
+        // 2. 必須含有價格或數量輸入容器 (掛單彈窗必有 priceInputs / quantityInputs)
+        const hasPriceInputs = modal.querySelector('[class*="MarketplacePanel_priceInputs"], [class*="priceInputs"]') !== null;
+        const hasQtyInputs = modal.querySelector('[class*="MarketplacePanel_quantityInputs"], [class*="quantityInputs"]') !== null;
+
+        // 3. 檢查標題或內容是否包含掛單關鍵字 (避免誤判 製作/工藝/技能 等無關彈窗)
+        const headerEl = modal.querySelector('[class*="MarketplacePanel_header"], [class*="Modal_header"], h2, h3');
+        const headerText = (headerEl?.textContent || "").trim();
+        const isOrderHeader = /(?:购买|買入|buy|出售|賣出|sell)\s*(?:挂牌|掛單|listing|order)/i.test(headerText) ||
+                              /(?:可交易区间|可交易區間|Tradable Range)/i.test(modal.textContent || "");
+
+        return (isMarketModalClass || isInsideMarketPanel) && (hasPriceInputs || hasQtyInputs) && isOrderHeader;
+    }
+
+    // ── 8. 精準識別當前市場面板物品與強化等級 (嚴格隔離側邊欄與製作彈窗) ─
     function detectCurrentItemInfo() {
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
         let itemId = "";
@@ -351,15 +373,15 @@
             }
         }
 
-        // 2. 次優先級：若處於彈窗中，從彈窗內的物品圖標與強化輸入框取得
-        const modal = document.querySelector('[class*="MarketplacePanel_modalContent"], [class*="Modal_modal"]');
-        if (modal) {
+        // 2. 次優先級：若處於市場掛單彈窗中，從彈窗內的物品圖標與強化輸入框取得 (嚴格排除製作/非市場彈窗)
+        const modal = document.querySelector('[class*="MarketplacePanel_modalContent"]');
+        if (modal && isMarketplaceOrderModal(modal)) {
             if (!itemId) {
                 const useEl = modal.querySelector('[class*="itemContainer"] svg use, [class*="Item_item"] svg use');
                 if (useEl) {
                     const href = useEl.getAttribute("href") || useEl.getAttribute("xlink:href") || "";
                     if (href.includes("#") && !href.includes("coin")) {
-                        itemId = href.split("#").pop();
+                        itemId = href.split("#").pop().replace(/^items_sprite-/, "").replace(/^\/items\//, "");
                     }
                 }
             }
@@ -378,7 +400,7 @@
                 if (useEl) {
                     const href = useEl.getAttribute("href") || useEl.getAttribute("xlink:href") || "";
                     if (href.includes("#") && !href.includes("coin")) {
-                        itemId = href.split("#").pop();
+                        itemId = href.split("#").pop().replace(/^items_sprite-/, "").replace(/^\/items\//, "");
                     }
                 }
                 const levelEl = currentItem.querySelector('[class*="Item_enhancementLevel"]');
@@ -763,7 +785,7 @@
     // ── 12. 頂部決策看板與深度行標籤 ───────────────────────
     async function renderAdvisorOverlay() {
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-        if (!marketPanel) return;
+        if (!marketPanel || marketPanel.offsetParent === null) return;
 
         const { itemId, enhancementLevel } = detectCurrentItemInfo();
         if (!itemId) return;
@@ -925,11 +947,19 @@
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
                     if (node instanceof Element) {
+                        // 嚴格僅對真正的市場掛單彈窗進行掛載，絕不捕獲工藝/製作/裝備等其他彈窗
                         const modal = node.matches?.('[class*="MarketplacePanel_modalContent"], [class*="Modal_modal"]')
                             ? node
                             : node.querySelector?.('[class*="MarketplacePanel_modalContent"], [class*="Modal_modal"]');
                         if (modal) {
-                            setTimeout(() => attachModalCalculator(modal), 80);
+                            if (isMarketplaceOrderModal(modal)) {
+                                setTimeout(() => attachModalCalculator(modal), 60);
+                            } else {
+                                // 若是非市場彈窗 (如製作木板、背包裝備等)，清除任何誤注入的試算器
+                                const leaked = modal.querySelector(".mwi-adv-modal-calc") ||
+                                               modal.parentElement?.querySelector(".mwi-adv-modal-calc");
+                                if (leaked) leaked.remove();
+                            }
                         }
                     }
                 }
@@ -939,19 +969,35 @@
     }
 
     async function attachModalCalculator(modal) {
+        // 嚴格校驗：非市場掛單彈窗絕不掛載
+        if (!isMarketplaceOrderModal(modal)) {
+            const leaked = modal.querySelector(".mwi-adv-modal-calc") ||
+                           modal.parentElement?.querySelector(".mwi-adv-modal-calc");
+            if (leaked) leaked.remove();
+            return;
+        }
+
         if (modal.querySelector(".mwi-adv-modal-calc")) return;
+
+        const priceInputsContainer = modal.querySelector('[class*="MarketplacePanel_priceInputs"], [class*="priceInputs"]');
+        if (!priceInputsContainer) return; // 嚴格守衛：非掛單彈窗缺少價格輸入容器時直接退出
 
         const calcContainer = document.createElement("div");
         calcContainer.className = "mwi-adv-modal-calc";
 
-        const priceInputsContainer = modal.querySelector('[class*="MarketplacePanel_priceInputs"], [class*="priceInputs"]');
-        const targetParent = priceInputsContainer?.closest('[class*="inputContainer"]') || priceInputsContainer?.parentElement || modal;
+        const targetParent = priceInputsContainer.closest('[class*="inputContainer"]') ||
+                             priceInputsContainer.parentElement ||
+                             priceInputsContainer;
         targetParent.after(calcContainer);
 
         const { itemId, enhancementLevel } = detectCurrentItemInfo();
         const historyInfo = await fetchItemHistory(itemId, enhancementLevel);
 
         const updateCalc = async () => {
+            if (!document.body.contains(modal) || !isMarketplaceOrderModal(modal)) {
+                calcContainer.remove();
+                return;
+            }
             const modalState = getModalState(modal);
             const freshHistory = await fetchItemHistory(itemId, modalState.enhancementLevel);
             renderModalSimulation(calcContainer, modalState, freshHistory, itemId, modal);
@@ -963,6 +1009,11 @@
 
         const timer = setInterval(() => {
             if (!document.body.contains(calcContainer)) {
+                clearInterval(timer);
+                return;
+            }
+            if (!isMarketplaceOrderModal(modal)) {
+                calcContainer.remove();
                 clearInterval(timer);
                 return;
             }
@@ -1253,7 +1304,7 @@
 
         setInterval(() => {
             const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-            if (marketPanel) {
+            if (marketPanel && marketPanel.offsetParent !== null) {
                 renderAdvisorOverlay();
             }
         }, 800);

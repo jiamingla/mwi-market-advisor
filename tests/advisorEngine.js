@@ -302,6 +302,20 @@ function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
     };
 }
 
+function isMarketplaceOrderModal(modal) {
+    if (!modal) return false;
+    const isMarketModalClass = (modal.matches && modal.matches('[class*="MarketplacePanel_modalContent"]')) ||
+                               (modal.querySelector && modal.querySelector('[class*="MarketplacePanel_modalContent"]') !== null);
+    const isInsideMarketPanel = (modal.closest && modal.closest('[class*="MarketplacePanel_marketplacePanel"]') !== null);
+    const hasPriceInputs = modal.querySelector && modal.querySelector('[class*="MarketplacePanel_priceInputs"], [class*="priceInputs"]') !== null;
+    const hasQtyInputs = modal.querySelector && modal.querySelector('[class*="MarketplacePanel_quantityInputs"], [class*="quantityInputs"]') !== null;
+    const headerEl = modal.querySelector ? modal.querySelector('[class*="MarketplacePanel_header"], [class*="Modal_header"], h2, h3') : null;
+    const headerText = (headerEl?.textContent || "").trim();
+    const isOrderHeader = /(?:购买|買入|buy|出售|賣出|sell)\s*(?:挂牌|掛單|listing|order)/i.test(headerText) ||
+                          /(?:可交易区间|可交易區間|Tradable Range)/i.test(modal.textContent || "");
+    return (isMarketModalClass || isInsideMarketPanel) && (hasPriceInputs || hasQtyInputs) && isOrderHeader;
+}
+
 module.exports = {
     CONFIG,
     tightBinGapUnit,
@@ -313,5 +327,6 @@ module.exports = {
     computeSellerNetPerItem,
     formatNumber,
     formatTime,
-    calculateTradeDecision
+    calculateTradeDecision,
+    isMarketplaceOrderModal
 };

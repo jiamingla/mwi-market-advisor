@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Milky Way Idle - E2E Test Fixture</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #141619;
+            color: #d1d5db;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .sidebar {
+            width: 200px;
+            background: #1f242d;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .nav-item {
+            padding: 10px 14px;
+            margin-bottom: 6px;
+            background: #2a313d;
+            border-radius: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .nav-item:hover, .nav-item.active {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .main-content {
+            flex: 1;
+            background: #1a1e24;
+            padding: 16px;
+            border-radius: 8px;
+            min-height: 400px;
+        }
+        .panel { display: none !important; }
+        .panel.active { display: block !important; }
+        .MarketplacePanel_marketplacePanel.active {
+            display: flex !important;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .crafting-recipe-btn {
+            padding: 8px 14px;
+            margin: 6px 4px;
+            background: #374151;
+            color: #fff;
+            border: 1px solid #4b5563;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .MarketplacePanel_tablesContainer {
+            display: flex;
+            gap: 20px;
+        }
+        table {
+            width: 50%;
+            border-collapse: collapse;
+            background: #21262d;
+        }
+        th, td {
+            padding: 6px 10px;
+            border: 1px solid #30363d;
+            text-align: right;
+        }
+
+        /* Generic Modals */
+        #modal-root {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        #modal-root.open { display: flex; }
+        .Modal_modal {
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 360px;
+            max-width: 500px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            position: relative;
+        }
+        .Modal_header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 8px;
+        }
+        .close-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            color: #9ca3af;
+            font-size: 16px;
+        }
+        .inputContainer {
+            margin: 10px 0;
+        }
+        input[type="text"], input[type="number"] {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+    </style>
+
+    <!-- SVG Sprites -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
+        <symbol id="items_sprite-birch_plank" viewBox="0 0 32 32">
+            <rect width="32" height="32" fill="#8B4513"/>
+        </symbol>
+        <symbol id="items_sprite-cedar_plank" viewBox="0 0 32 32">
+            <rect width="32" height="32" fill="#A0522D"/>
+        </symbol>
+        <symbol id="items_sprite-birch_log" viewBox="0 0 32 32">
+            <rect width="32" height="32" fill="#DEB887"/>
+        </symbol>
+        <symbol id="items_sprite-ranged_coffee" viewBox="0 0 32 32">
+            <rect width="32" height="32" fill="#6F4E37"/>
+        </symbol>
+    </svg>
+</head>
+<body>
+
+<div class="container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h3>銀河奶牛放置</h3>
+        <div class="nav-item active" id="nav-crafting" onclick="showPanel('crafting')">🔨 手作 / 木工</div>
+        <div class="nav-item" id="nav-marketplace" onclick="showPanel('marketplace')">🏪 市場交易</div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- 1. Crafting Panel (工藝製作面板) -->
+        <div id="crafting-panel" class="panel active CraftingPanel_craftingPanel">
+            <h2>木工技能 (Woodworking)</h2>
+            <p>選擇您想製作的木板配方：</p>
+            <div>
+                <button class="crafting-recipe-btn" id="btn-craft-birch" onclick="openCraftingModal('birch_plank')">
+                    製作樺木木板
+                </button>
+                <button class="crafting-recipe-btn" id="btn-craft-cedar" onclick="openCraftingModal('cedar_plank')">
+                    製作雪松木板
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. Marketplace Panel (市場交易所面板) -->
+        <div id="marketplace-panel" class="panel MarketplacePanel_marketplacePanel">
+            <div class="MarketplacePanel_headerSection">
+                <h2>市場買賣盤口</h2>
+                <div class="MarketplacePanel_currentItem">
+                    <svg width="32" height="32"><use href="#items_sprite-birch_log"></use></svg>
+                    <span style="font-weight: bold; margin-left: 8px;">樺木原木 (Birch Log)</span>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="margin: 10px 0;">
+                <button class="crafting-recipe-btn" id="btn-open-buy-modal" onclick="openMarketModal('BUY')" style="background: #059669;">
+                    購買掛牌
+                </button>
+                <button class="crafting-recipe-btn" id="btn-open-sell-modal" onclick="openMarketModal('SELL')" style="background: #dc2626;">
+                    出售掛牌
+                </button>
+            </div>
+
+            <!-- Order Books -->
+            <div class="MarketplacePanel_tablesContainer MarketplacePanel_orderBooksContainer">
+                <div>
+                    <h4>出售列表 (Asks)</h4>
+                    <table>
+                        <thead><tr><th>數量</th><th>單價</th></tr></thead>
+                        <tbody>
+                            <tr><td>250</td><td>4,816</td></tr>
+                            <tr><td>600</td><td>4,832</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <h4>收購列表 (Bids)</h4>
+                    <table>
+                        <thead><tr><th>數量</th><th>單價</th></tr></thead>
+                        <tbody>
+                            <tr><td>400</td><td>4,784</td></tr>
+                            <tr><td>1,200</td><td>4,768</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Container -->
+<div id="modal-root"></div>
+
+<script>
+    // Tab switching
+    function showPanel(panelName) {
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        if (panelName === 'crafting') {
+            document.getElementById('crafting-panel').classList.add('active');
+            document.getElementById('nav-crafting').classList.add('active');
+        } else {
+            document.getElementById('marketplace-panel').classList.add('active');
+            document.getElementById('nav-marketplace').classList.add('active');
+        }
+    }
+
+    // Modal Root Helper
+    const modalRoot = document.getElementById('modal-root');
+    function closeModal() {
+        modalRoot.innerHTML = '';
+        modalRoot.classList.remove('open');
+    }
+
+    // Open Crafting Modal (模擬製作木板彈窗)
+    function openCraftingModal(initialPlank = 'birch_plank') {
+        const isBirch = initialPlank === 'birch_plank';
+        const plankName = isBirch ? '樺木木板' : '雪松木板';
+        const plankId = isBirch ? 'birch_plank' : 'cedar_plank';
+
+        modalRoot.innerHTML = `
+            <div class="Modal_modal CraftingPanel_modalContent">
+                <button class="close-btn" onclick="closeModal()">✕</button>
+                <div class="Modal_header CraftingPanel_header">製作木板</div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                    <div class="Item_item itemContainer">
+                        <svg width="32" height="32"><use id="crafting-item-use" href="#items_sprite-${plankId}"></use></svg>
+                    </div>
+                    <span id="crafting-item-name" style="font-weight: bold;">${plankName}</span>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <label>切換木板種類：</label>
+                    <button id="btn-select-second-plank" onclick="switchCraftingPlank('${isBirch ? 'cedar_plank' : 'birch_plank'}')">
+                        選擇${isBirch ? '雪松木板' : '樺木木板'}
+                    </button>
+                </div>
+                <div class="inputContainer">
+                    <label>製作次數：</label>
+                    <input type="number" id="craft-times-input" value="10" min="1">
+                </div>
+                <div style="text-align: right; margin-top: 15px;">
+                    <button class="crafting-recipe-btn" style="background:#2563eb;" onclick="alert('開始製作！'); closeModal();">開始製作</button>
+                </div>
+            </div>
+        `;
+        modalRoot.classList.add('open');
+    }
+
+    // Switch Crafting Plank (模擬使用者在彈窗內切換選擇第二次木板)
+    function switchCraftingPlank(targetPlank) {
+        const isBirch = targetPlank === 'birch_plank';
+        const plankName = isBirch ? '樺木木板' : '雪松木板';
+        const plankId = isBirch ? 'birch_plank' : 'cedar_plank';
+        
+        document.getElementById('crafting-item-use').setAttribute('href', `#items_sprite-${plankId}`);
+        document.getElementById('crafting-item-name').textContent = plankName;
+        const switchBtn = document.getElementById('btn-select-second-plank');
+        switchBtn.textContent = `選擇${isBirch ? '雪松木板' : '樺木木板'}`;
+        switchBtn.setAttribute('onclick', `switchCraftingPlank('${isBirch ? 'cedar_plank' : 'birch_plank'}')`);
+    }
+
+    // Open Marketplace Modal (模擬市場購買/出售掛牌彈窗)
+    function openMarketModal(type = 'BUY') {
+        const isBuy = type === 'BUY';
+        modalRoot.innerHTML = `
+            <div class="Modal_modal MarketplacePanel_modalContent">
+                <button class="close-btn" onclick="closeModal()">✕</button>
+                <div class="Modal_header MarketplacePanel_header">
+                    ${isBuy ? '购买挂牌' : '出售挂牌'}
+                </div>
+                <div style="font-size: 13px; color: #9ca3af; margin-bottom: 8px;">
+                    可交易区间：4,336 – 5,300
+                </div>
+                <div class="inputContainer MarketplacePanel_priceInputs priceInputs">
+                    <label>价格 (最佳${isBuy ? '购买' : '出售'}报价: ${isBuy ? '4,784' : '4,816'})</label>
+                    <input type="text" id="market-price-input" value="4,800">
+                </div>
+                <div class="inputContainer MarketplacePanel_quantityInputs quantityInputs">
+                    <label>数量</label>
+                    <input type="text" id="market-qty-input" value="10">
+                </div>
+                <div style="text-align: right; margin-top: 15px;">
+                    <button class="crafting-recipe-btn" style="background:#2563eb;" onclick="closeModal()">确认挂牌</button>
+                </div>
+            </div>
+        `;
+        modalRoot.classList.add('open');
+
+        // Setup React Fiber simulation on modal & marketPanel
+        setupMarketFiber();
+    }
+
+    function setupMarketFiber() {
+        const marketPanel = document.getElementById('marketplace-panel');
+        if (marketPanel) {
+            marketPanel.__reactFiber$test = {
+                stateNode: {
+                    state: {
+                        itemHrid: '/items/birch_log',
+                        enhancementLevel: 0
+                    },
+                    handleSetPriceInput: function(newPrice) {
+                        const inp = document.getElementById('market-price-input');
+                        if (inp) {
+                            inp.value = newPrice;
+                            inp.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    }
+                }
+            };
+        }
+    }
+
+    // Initialize on page load
+    setupMarketFiber();
+</script>
+
+</body>
+</html>

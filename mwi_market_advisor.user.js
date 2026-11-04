@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.4
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精準限制掛單彈窗作用域，徹底杜絕製作/工藝/裝備等非市場彈窗誤注入，支援 4% 交易稅/牛鈴 18% 稅、官方 BinGap 檔位增量、+5/+7 強化裝備低流速模型、全場景自動化 E2E 瀏覽器測試驗證。
+// @version      1.3.5
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。新增頂部買賣家雙向速查卡、跨盤口斷檔幅度與插槽指示條、精準隔離非市場彈窗、全場景自動化 E2E 瀏覽器測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.4 (彈窗精準隔離與 E2E 驗證版) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.5 (買賣雙向速查與斷檔跨度條實裝版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -782,6 +782,54 @@
         };
     }
 
+    // ── 11.5 盤口價差真空度與斷檔檔位試算 (Spread & Gap Engine) ───
+    function calculateSpreadGap(bestAsk, bestBid, enhancementLevel = 0, itemId = "") {
+        if (!bestAsk || !bestBid || bestAsk <= bestBid) {
+            return null;
+        }
+        const spreadGold = bestAsk - bestBid;
+        const spreadPct = (spreadGold / bestAsk) * 100;
+
+        // 逐檔步進計算中間有多少合法 Tick 檔位
+        const gapTicks = [];
+        let curr = getNextBinnedPrice(bestBid, enhancementLevel);
+        while (curr < bestAsk && gapTicks.length < 50) {
+            gapTicks.push(curr);
+            const next = getNextBinnedPrice(curr, enhancementLevel);
+            if (next <= curr) break; // 防禦死循環
+            curr = next;
+        }
+
+        const nextBid = getNextBinnedPrice(bestBid, enhancementLevel);
+        const prevAsk = getPrevBinnedPrice(bestAsk, enhancementLevel);
+
+        const topMakerBid = nextBid < bestAsk ? nextBid : bestBid;
+        const topMakerAsk = prevAsk > bestBid ? prevAsk : bestAsk;
+
+        const taxRate = getItemTaxRate(itemId);
+        const makerNetRevenue = computeSellerNetPerItem(topMakerAsk, taxRate);
+        const dumpNet = computeSellerNetPerItem(bestBid, taxRate);
+
+        const marketMakingProfit = makerNetRevenue - topMakerBid;
+        const buySaving = bestAsk - topMakerBid;
+        const sellNetGain = makerNetRevenue - dumpNet;
+
+        return {
+            bestAsk,
+            bestBid,
+            spreadGold,
+            spreadPct,
+            gapCount: gapTicks.length,
+            gapTicks,
+            topMakerBid,
+            topMakerAsk,
+            buySaving: Math.max(0, buySaving),
+            sellNetGain: Math.max(0, sellNetGain),
+            marketMakingProfit,
+            taxRate
+        };
+    }
+
     // ── 12. 頂部決策看板與深度行標籤 ───────────────────────
     async function renderAdvisorOverlay() {
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
@@ -799,11 +847,14 @@
         const bestAsk = asks.length ? asks[0].price : null;
         const bestBid = bids.length ? bids[0].price : null;
 
-        injectTopAdvisorBanner(marketPanel, itemId, enhancementLevel, bestAsk, bestBid, historyInfo);
-        decorateOrderRows(asks, bids, historyInfo, enhancementLevel);
+        const gapInfo = calculateSpreadGap(bestAsk, bestBid, enhancementLevel, itemId);
+
+        injectTopAdvisorBanner(marketPanel, itemId, enhancementLevel, bestAsk, bestBid, historyInfo, gapInfo);
+        injectSpreadBridgeBar(marketPanel, gapInfo);
+        decorateOrderRows(asks, bids, historyInfo, enhancementLevel, gapInfo);
     }
 
-    function injectTopAdvisorBanner(panel, itemId, enhancementLevel, bestAsk, bestBid, historyInfo) {
+    function injectTopAdvisorBanner(panel, itemId, enhancementLevel, bestAsk, bestBid, historyInfo, gapInfo) {
         let banner = panel.querySelector(".mwi-advisor-top-banner");
         if (!banner) {
             banner = document.createElement("div");
@@ -840,23 +891,63 @@
             `;
         }
 
-        let recText = "";
-        let recStyle = "";
-        if (historyInfo?.isLowLiquidityGear) {
-            recText = `⚠️ 低流通度裝備：日均成交僅約 ${dailyAvg.toFixed(1)} 件。若排在第二檔之後容易長期滯銷，推薦直接吃單或掛在首檔耐心等待。`;
-            recStyle = "background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #fcd34d;";
-        } else if (historyInfo?.isBurstItem) {
-            recText = "🌊 大單週期型商品：平時零星散買，但每隔數天有集中大掃貨，強烈建議掛在首檔阻力位等待！";
-            recStyle = "background: rgba(59, 130, 246, 0.15); border-color: #3b82f6; color: #93c5fd;";
-        } else if (spreadGold > 0 && (spreadGold / bestAsk) < 0.015) {
-            recText = "🟢 建議直接結帳：買賣價差微薄且排隊冗長，直接吃單變現週轉更划算！";
-            recStyle = "background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7;";
-        } else if (spreadGold > 0 && (spreadGold / bestAsk) >= 0.03) {
-            recText = "🟡 建議首檔掛單：盤口價差可觀，掛在首檔成交快，性價比高！";
-            recStyle = "background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #fcd34d;";
-        } else {
-            recText = "💡 盤口價差適中。急需資金推薦直接結帳，追求最大利潤推薦掛首檔搶第一順位。";
-            recStyle = "background: rgba(96, 165, 250, 0.15); border-color: #3b82f6; color: #93c5fd;";
+        // 買家 vs 賣家 雙向速查決策卡
+        let decisionGridHtml = "";
+        if (gapInfo) {
+            const dumpNet = computeSellerNetPerItem(bestBid, gapInfo.taxRate);
+            const makerNet = computeSellerNetPerItem(gapInfo.topMakerAsk, gapInfo.taxRate);
+            const mmProfitText = gapInfo.marketMakingProfit > 0
+                ? `<span style="color: #34d399; font-weight: 600;">💰 做市利潤: ${gapInfo.topMakerBid}G 買入 ➔ ${gapInfo.topMakerAsk}G 賣出，稅後每件淨賺 +${gapInfo.marketMakingProfit}G</span>`
+                : `<span style="color: #64748b;">⛔ 扣除 ${(gapInfo.taxRate * 100).toFixed(0)}% 交易稅後無做市搬磚空間</span>`;
+
+            decisionGridHtml = `
+                <div class="mwi-adv-decision-grid">
+                    <!-- 買家決策卡 -->
+                    <div class="mwi-adv-side-card buyer">
+                        <div class="mwi-adv-side-title">
+                            <span class="buy">🛒 【買家】順利低價買入</span>
+                            <span class="mwi-adv-side-badge buy">搶第 1 順位</span>
+                        </div>
+                        <div class="mwi-adv-side-body">
+                            <div class="mwi-adv-rec-price-row">
+                                <span class="mwi-adv-label">🎯 推薦買價:</span>
+                                <span class="mwi-adv-price buy">${gapInfo.topMakerBid} G</span>
+                                <span class="mwi-adv-saving">+1檔 (每件省 ${gapInfo.buySaving}G)</span>
+                            </div>
+                            <div class="mwi-adv-desc-row">
+                                ⚡ 速度：前排 <b>0</b> 件排隊，最優先被賣家撮合
+                            </div>
+                            <div class="mwi-adv-alt-row">
+                                💨 急需立刻拿到？直接吃單: <b>${bestAsk} G</b> (多付 ${gapInfo.buySaving}G)
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 賣家決策卡 -->
+                    <div class="mwi-adv-side-card seller">
+                        <div class="mwi-adv-side-title">
+                            <span class="sell">💰 【賣家】順利高價賣掉</span>
+                            <span class="mwi-adv-side-badge sell">搶第 1 順位</span>
+                        </div>
+                        <div class="mwi-adv-side-body">
+                            <div class="mwi-adv-rec-price-row">
+                                <span class="mwi-adv-label">🎯 推薦賣價:</span>
+                                <span class="mwi-adv-price sell">${gapInfo.topMakerAsk} G</span>
+                                <span class="mwi-adv-saving">-1檔 (每件多賺 ${gapInfo.sellNetGain}G)</span>
+                            </div>
+                            <div class="mwi-adv-desc-row">
+                                ⚡ 速度：前排 <b>0</b> 件排隊，最優先被買家買走 (稅後實得 ${makerNet}G)
+                            </div>
+                            <div class="mwi-adv-alt-row">
+                                💨 急需立刻變現？直接賣出: <b>${bestBid} G</b> (實得 ${dumpNet}G)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mwi-adv-mm-bar">
+                    ${mmProfitText}
+                </div>
+            `;
         }
 
         banner.innerHTML = `
@@ -876,13 +967,84 @@
                 </div>
             </div>
             ${burstCardHtml}
-            <div class="mwi-adv-rec-box" style="${recStyle}">
-                ${recText}
+            ${decisionGridHtml}
+        `;
+    }
+
+    // ── 12.5 表格第一行斷檔跨度指示條 (Spread Gap Bridge Bar) ───────
+    function injectSpreadBridgeBar(panel, gapInfo) {
+        let bar = panel.querySelector(".mwi-adv-spread-bridge-bar");
+        if (!gapInfo) {
+            if (bar) bar.remove();
+            return;
+        }
+
+        const orderBooksContainer = panel.querySelector('[class*="MarketplacePanel_orderBooksContainer"]') ||
+                                    panel.querySelector('[class*="MarketplacePanel_tablesContainer"]') ||
+                                    panel.querySelector("table")?.closest("div");
+
+        if (!bar) {
+            bar = document.createElement("div");
+            bar.className = "mwi-adv-spread-bridge-bar";
+            if (orderBooksContainer) {
+                orderBooksContainer.parentElement.insertBefore(bar, orderBooksContainer);
+            } else {
+                panel.appendChild(bar);
+            }
+        }
+
+        let ticksHtml = "";
+        if (gapInfo.gapCount === 0) {
+            ticksHtml = `<div class="mwi-adv-ruler-tight">⚡ 連續相鄰檔位（無中間插隊空間）</div>`;
+        } else if (gapInfo.gapCount <= 6) {
+            ticksHtml = gapInfo.gapTicks.map(t => {
+                if (t === gapInfo.topMakerBid) {
+                    return `<span class="mwi-adv-tick-node buy-snip" title="買方搶先價: ${t}G">⭐${t} (買)</span>`;
+                } else if (t === gapInfo.topMakerAsk) {
+                    return `<span class="mwi-adv-tick-node sell-snip" title="賣方搶先價: ${t}G">⭐${t} (賣)</span>`;
+                } else {
+                    return `<span class="mwi-adv-tick-node empty" title="空檔位: ${t}G">${t}</span>`;
+                }
+            }).join('<span class="mwi-adv-tick-line"></span>');
+        } else {
+            ticksHtml = `
+                <span class="mwi-adv-tick-node buy-snip" title="買方搶先價: ${gapInfo.topMakerBid}G">⭐${gapInfo.topMakerBid} (買)</span>
+                <span class="mwi-adv-tick-line"></span>
+                <span class="mwi-adv-tick-node empty" style="padding: 2px 8px;">... 中間 ${gapInfo.gapCount - 2} 檔真空 ...</span>
+                <span class="mwi-adv-tick-line"></span>
+                <span class="mwi-adv-tick-node sell-snip" title="賣方搶先價: ${gapInfo.topMakerAsk}G">⭐${gapInfo.topMakerAsk} (賣)</span>
+            `;
+        }
+
+        const statusClass = gapInfo.gapCount >= 3 ? "wide" : (gapInfo.gapCount > 0 ? "medium" : "tight");
+        const statusText = gapInfo.gapCount >= 3
+            ? `⚠️ 盤口斷檔真空 (${gapInfo.gapCount} 檔真空，價差 ${gapInfo.spreadPct.toFixed(1)}%)`
+            : (gapInfo.gapCount > 0 ? `💡 輕微斷檔 (${gapInfo.gapCount} 檔空白)` : `⚡ 緊湊連續盤口 (無斷檔)`);
+
+        bar.innerHTML = `
+            <div class="mwi-adv-bridge-header">
+                <span class="mwi-adv-bridge-status ${statusClass}">${statusText}</span>
+                <span class="mwi-adv-bridge-gap-info">
+                    盤口價差: <b>${gapInfo.bestBid}G</b> ↔ <b>${gapInfo.bestAsk}G</b> (差距 <b>${gapInfo.spreadGold}G</b>)
+                </span>
+            </div>
+            <div class="mwi-adv-bridge-ruler">
+                <div class="mwi-adv-ruler-anchor bid">
+                    <span class="mwi-adv-ruler-name">最高買價</span>
+                    <span class="mwi-adv-ruler-val">${gapInfo.bestBid} G</span>
+                </div>
+                <div class="mwi-adv-ruler-track">
+                    ${ticksHtml}
+                </div>
+                <div class="mwi-adv-ruler-anchor ask">
+                    <span class="mwi-adv-ruler-name">最低賣價</span>
+                    <span class="mwi-adv-ruler-val">${gapInfo.bestAsk} G</span>
+                </div>
             </div>
         `;
     }
 
-    function decorateOrderRows(asks, bids, historyInfo, enhancementLevel) {
+    function decorateOrderRows(asks, bids, historyInfo, enhancementLevel, gapInfo) {
         const itemInfo = getItemMarketInfo(STATE.currentItemId, enhancementLevel);
         const snapshotHourly = itemInfo?.volume || 0;
         const histDaily = (historyInfo && typeof historyInfo.dailyAvg === 'number' && historyInfo.dailyAvg > 0)
@@ -899,7 +1061,10 @@
             if (!order.trElement) return;
             const effectiveVol = idx === 0 ? blendedVol : (blendedVol * CONFIG.UNDERCUT_PENALTY_RATE);
             const etaHours = (aheadAsk + order.count) / Math.max(0.001, effectiveVol);
-            applyBadgeToRow(order.trElement, aheadAsk, etaHours, order.isMine);
+            const snipTag = (idx === 0 && gapInfo && gapInfo.topMakerAsk < order.price)
+                ? `[💡可插 ${gapInfo.topMakerAsk}G 搶首位]`
+                : null;
+            applyBadgeToRow(order.trElement, aheadAsk, etaHours, order.isMine, snipTag);
             aheadAsk += order.count;
         });
 
@@ -908,12 +1073,15 @@
             if (!order.trElement) return;
             const effectiveVol = idx === 0 ? blendedVol : (blendedVol * CONFIG.UNDERCUT_PENALTY_RATE);
             const etaHours = (aheadBid + order.count) / Math.max(0.001, effectiveVol);
-            applyBadgeToRow(order.trElement, aheadBid, etaHours, order.isMine);
+            const snipTag = (idx === 0 && gapInfo && gapInfo.topMakerBid > order.price)
+                ? `[💡可插 ${gapInfo.topMakerBid}G 搶首位]`
+                : null;
+            applyBadgeToRow(order.trElement, aheadBid, etaHours, order.isMine, snipTag);
             aheadBid += order.count;
         });
     }
 
-    function applyBadgeToRow(tr, aheadCount, etaHours, isMine) {
+    function applyBadgeToRow(tr, aheadCount, etaHours, isMine, snipTag = null) {
         let badge = tr.querySelector(".mwi-adv-row-badge");
         if (!badge) {
             badge = document.createElement("span");
@@ -928,7 +1096,7 @@
         else if (etaHours < 2) etaColor = "#10b981";
 
         badge.style.color = etaColor;
-        badge.innerHTML = `[前排: ${formatNumber(aheadCount)} | ${formatTime(etaHours)}]`;
+        badge.innerHTML = `[前排: ${formatNumber(aheadCount)} | ${formatTime(etaHours)}]${snipTag ? ` <span class="mwi-adv-snip-tag">${snipTag}</span>` : ''}`;
 
         if (isMine) {
             tr.classList.add("mwi-adv-my-order-highlight");
@@ -1290,6 +1458,183 @@
             .mwi-adv-quick-btn.maker {
                 background: #3b82f6;
                 color: #ffffff;
+            }
+
+            /* 買賣家雙向速查決策卡 */
+            .mwi-adv-decision-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 10px;
+            }
+            .mwi-adv-side-card {
+                padding: 10px 12px;
+                border-radius: 6px;
+                background: #141824;
+                border: 1px solid #23293d;
+            }
+            .mwi-adv-side-card.buyer {
+                border-left: 3px solid #10b981;
+            }
+            .mwi-adv-side-card.seller {
+                border-left: 3px solid #f59e0b;
+            }
+            .mwi-adv-side-title {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-weight: 700;
+                font-size: 11px;
+                margin-bottom: 6px;
+            }
+            .mwi-adv-side-title .buy { color: #34d399; }
+            .mwi-adv-side-title .sell { color: #fbbf24; }
+            .mwi-adv-side-badge {
+                font-size: 10px;
+                padding: 1px 5px;
+                border-radius: 3px;
+                font-weight: 700;
+            }
+            .mwi-adv-side-badge.buy {
+                background: rgba(16, 185, 129, 0.2);
+                color: #34d399;
+                border: 1px solid #10b981;
+            }
+            .mwi-adv-side-badge.sell {
+                background: rgba(245, 158, 11, 0.2);
+                color: #fbbf24;
+                border: 1px solid #f59e0b;
+            }
+            .mwi-adv-rec-price-row {
+                display: flex;
+                align-items: baseline;
+                gap: 6px;
+                margin-bottom: 4px;
+            }
+            .mwi-adv-price.buy { color: #10b981; font-weight: 800; font-size: 14px; }
+            .mwi-adv-price.sell { color: #f59e0b; font-weight: 800; font-size: 14px; }
+            .mwi-adv-saving {
+                font-size: 11px;
+                color: #94a3b8;
+            }
+            .mwi-adv-desc-row {
+                font-size: 11px;
+                color: #cbd5e1;
+                margin-bottom: 3px;
+            }
+            .mwi-adv-alt-row {
+                font-size: 10px;
+                color: #64748b;
+                border-top: 1px dashed #23293d;
+                padding-top: 4px;
+                margin-top: 4px;
+            }
+            .mwi-adv-mm-bar {
+                margin-top: 8px;
+                padding: 4px 8px;
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 4px;
+                font-size: 11px;
+                text-align: center;
+            }
+
+            /* 斷檔幅度指示條 (Spread Gap Bridge Bar) */
+            .mwi-adv-spread-bridge-bar {
+                margin: 8px 0 10px 0;
+                padding: 8px 12px;
+                background: #111420;
+                border: 1px solid #1f2538;
+                border-radius: 6px;
+                font-size: 11px;
+            }
+            .mwi-adv-bridge-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
+            }
+            .mwi-adv-bridge-status {
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-weight: 700;
+                font-size: 10px;
+            }
+            .mwi-adv-bridge-status.wide {
+                background: rgba(245, 158, 11, 0.2);
+                color: #fcd34d;
+                border: 1px solid rgba(245, 158, 11, 0.4);
+            }
+            .mwi-adv-bridge-status.medium {
+                background: rgba(59, 130, 246, 0.2);
+                color: #93c5fd;
+                border: 1px solid rgba(59, 130, 246, 0.4);
+            }
+            .mwi-adv-bridge-status.tight {
+                background: rgba(16, 185, 129, 0.15);
+                color: #6ee7b7;
+                border: 1px solid rgba(16, 185, 129, 0.3);
+            }
+            .mwi-adv-bridge-ruler {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                background: #090b12;
+                padding: 6px 10px;
+                border-radius: 5px;
+                border: 1px solid #1a1e2d;
+            }
+            .mwi-adv-ruler-anchor {
+                display: flex;
+                flex-direction: column;
+                font-weight: 700;
+                font-size: 10px;
+            }
+            .mwi-adv-ruler-anchor.bid { align-items: flex-start; color: #34d399; }
+            .mwi-adv-ruler-anchor.ask { align-items: flex-end; color: #f87171; }
+            .mwi-adv-ruler-track {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+                overflow-x: auto;
+            }
+            .mwi-adv-tick-node {
+                padding: 2px 5px;
+                border-radius: 3px;
+                font-size: 10px;
+                font-weight: 600;
+            }
+            .mwi-adv-tick-node.buy-snip {
+                background: rgba(16, 185, 129, 0.25);
+                color: #34d399;
+                border: 1px solid #10b981;
+            }
+            .mwi-adv-tick-node.sell-snip {
+                background: rgba(245, 158, 11, 0.25);
+                color: #fbbf24;
+                border: 1px solid #f59e0b;
+            }
+            .mwi-adv-tick-node.empty {
+                background: rgba(255, 255, 255, 0.04);
+                color: #64748b;
+                border: 1px dashed #334155;
+            }
+            .mwi-adv-tick-line {
+                width: 8px;
+                height: 1px;
+                background: #334155;
+            }
+            .mwi-adv-ruler-tight {
+                color: #64748b;
+                font-size: 11px;
+            }
+            .mwi-adv-snip-tag {
+                color: #38bdf8;
+                font-size: 10px;
+                font-weight: 600;
+                margin-left: 4px;
             }
         `;
         document.head.appendChild(style);

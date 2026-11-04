@@ -43,7 +43,7 @@ def run_e2e_test():
         # 2. 注入 Mock API (避免真實聯網 404 與延遲)
         mock_api_script = """
         window.__mockMarketData = {
-            "birch_log": { "ask": 4816, "bid": 4784 }
+            "birch_log": { "ask": 68, "bid": 62 }
         };
         const origFetch = window.fetch;
         window.fetch = async function(url, ...args) {
@@ -63,7 +63,7 @@ def run_e2e_test():
         driver.execute_script(mock_api_script)
 
         # 3. 注入 MWI 交易決策顧問油猴腳本 (完全同真實瀏覽器運行)
-        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.4)...")
+        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.5)...")
         driver.execute_script(userscript_code)
         time.sleep(1)
 
@@ -135,7 +135,22 @@ def run_e2e_test():
         assert len(banners_step3) >= 1, "市場面板頂部顧問橫幅未能正常注入！"
         banner_text = banners_step3[0].text
         assert "交易決策顧問" in banner_text or "智慧交易決策顧問" in banner_text, f"橫幅內容不正確: {banner_text}"
-        print("   ✅ [PASS] 測試 3 通過：市場面板頂部橫幅成功注入並正確顯示！")
+
+        # 驗證【買家 vs 賣家 雙向速查決策卡】正常渲染
+        decision_cards = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-side-card")
+        assert len(decision_cards) == 2, f"雙向速查決策卡數量異常: {len(decision_cards)}"
+        buyer_card_text = decision_cards[0].text
+        seller_card_text = decision_cards[1].text
+        assert "買家" in buyer_card_text and "推薦買價" in buyer_card_text, f"買家決策卡內容缺失: {buyer_card_text}"
+        assert "賣家" in seller_card_text and "推薦賣價" in seller_card_text, f"賣家決策卡內容缺失: {seller_card_text}"
+
+        # 驗證【表格第一行斷檔跨度指示條】正常渲染
+        bridge_bars = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-spread-bridge-bar")
+        assert len(bridge_bars) >= 1, "盤口斷檔跨度指示條未能注入！"
+        bridge_text = bridge_bars[0].text
+        assert "斷檔真空" in bridge_text, f"斷檔跨度指示條未正確識別真空: {bridge_text}"
+
+        print("   ✅ [PASS] 測試 3 通過：頂部買賣雙向速查卡與斷檔跨度指示條均精確渲染！")
         passed_tests += 1
 
         # ───────────────────────────────────────────────────────────
@@ -168,6 +183,7 @@ def run_e2e_test():
         time.sleep(0.3)
         market_price_val = driver.find_element(By.ID, "market-price-input").get_attribute("value")
         print(f"   點擊填入首檔搶先價後，價格輸入框值為: {market_price_val}")
+        assert market_price_val == "63", f"預期首檔搶先價為 63，實際為: {market_price_val}"
 
         print("   ✅ [PASS] 測試 4 通過：市場掛單彈窗精確注入試算器，且一鍵填入按鈕連動正常！")
         passed_tests += 1

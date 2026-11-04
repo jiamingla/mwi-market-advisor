@@ -316,6 +316,54 @@ function isMarketplaceOrderModal(modal) {
     return (isMarketModalClass || isInsideMarketPanel) && (hasPriceInputs || hasQtyInputs) && isOrderHeader;
 }
 
+// ── 盤口價差真空度與斷檔檔位試算 (Spread & Gap Engine) ───────
+function calculateSpreadGap(bestAsk, bestBid, enhancementLevel = 0, itemId = "") {
+    if (!bestAsk || !bestBid || bestAsk <= bestBid) {
+        return null;
+    }
+    const spreadGold = bestAsk - bestBid;
+    const spreadPct = (spreadGold / bestAsk) * 100;
+
+    // 逐檔步進計算中間有多少合法 Tick 檔位
+    const gapTicks = [];
+    let curr = getNextBinnedPrice(bestBid, enhancementLevel);
+    while (curr < bestAsk && gapTicks.length < 50) {
+        gapTicks.push(curr);
+        const next = getNextBinnedPrice(curr, enhancementLevel);
+        if (next <= curr) break; // 防禦死循環
+        curr = next;
+    }
+
+    const nextBid = getNextBinnedPrice(bestBid, enhancementLevel);
+    const prevAsk = getPrevBinnedPrice(bestAsk, enhancementLevel);
+
+    const topMakerBid = nextBid < bestAsk ? nextBid : bestBid;
+    const topMakerAsk = prevAsk > bestBid ? prevAsk : bestAsk;
+
+    const taxRate = getItemTaxRate(itemId);
+    const makerNetRevenue = computeSellerNetPerItem(topMakerAsk, taxRate);
+    const dumpNet = computeSellerNetPerItem(bestBid, taxRate);
+
+    const marketMakingProfit = makerNetRevenue - topMakerBid;
+    const buySaving = bestAsk - topMakerBid;
+    const sellNetGain = makerNetRevenue - dumpNet;
+
+    return {
+        bestAsk,
+        bestBid,
+        spreadGold,
+        spreadPct,
+        gapCount: gapTicks.length,
+        gapTicks,
+        topMakerBid,
+        topMakerAsk,
+        buySaving: Math.max(0, buySaving),
+        sellNetGain: Math.max(0, sellNetGain),
+        marketMakingProfit,
+        taxRate
+    };
+}
+
 module.exports = {
     CONFIG,
     tightBinGapUnit,
@@ -328,5 +376,6 @@ module.exports = {
     formatNumber,
     formatTime,
     calculateTradeDecision,
-    isMarketplaceOrderModal
+    isMarketplaceOrderModal,
+    calculateSpreadGap
 };

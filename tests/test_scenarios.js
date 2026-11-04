@@ -11,7 +11,8 @@ const {
     formatNumber,
     formatTime,
     calculateTradeDecision,
-    isMarketplaceOrderModal
+    isMarketplaceOrderModal,
+    calculateSpreadGap
 } = require("./advisorEngine");
 
 let passed = 0;
@@ -399,6 +400,52 @@ describe("情境 7：掛單彈窗嚴格識別與隔離防護 (防止污染木工
             textContent: "出售挂牌 可交易区间：4336 – 5300 价格: 4,800"
         };
         assert.strictEqual(isMarketplaceOrderModal(marketSellModal), true);
+    });
+});
+
+// ────────────────────────────────────────────────────────
+describe("情境 8：盤口斷檔真空與做市插隊試算 (Spread Gap Engine)", () => {
+    it("8.1 樺木原木 (62 vs 68): 精準計算 5 個真空檔位與做市空間", () => {
+        const gap = calculateSpreadGap(68, 62, 0, "birch_log");
+        assert.ok(gap !== null);
+        assert.strictEqual(gap.spreadGold, 6);
+        assert.strictEqual(gap.gapCount, 5); // 63, 64, 65, 66, 67
+        assert.deepStrictEqual(gap.gapTicks, [63, 64, 65, 66, 67]);
+        assert.strictEqual(gap.topMakerBid, 63); // 買方推薦插隊 63
+        assert.strictEqual(gap.topMakerAsk, 67); // 賣方推薦插隊 67
+        assert.strictEqual(gap.buySaving, 5);    // 比吃單 68 省 5G
+        assert.strictEqual(gap.sellNetGain, 5);  // 比吃單 62 (稅後59) 多賺 5G (67稅後64)
+        assert.strictEqual(gap.marketMakingProfit, 1); // 63 買 67 賣實收 64，淨賺 1G
+    });
+
+    it("8.2 普通原木 (24 vs 25): 相鄰檔位無斷檔，正確標示 0 檔真空", () => {
+        const gap = calculateSpreadGap(25, 24, 0, "log");
+        assert.ok(gap !== null);
+        assert.strictEqual(gap.spreadGold, 1);
+        assert.strictEqual(gap.gapCount, 0);
+        assert.deepStrictEqual(gap.gapTicks, []);
+        assert.strictEqual(gap.topMakerBid, 24);
+        assert.strictEqual(gap.topMakerAsk, 25);
+        assert.strictEqual(gap.buySaving, 1);        // 掛24買比吃單25少付1G
+        assert.strictEqual(gap.sellNetGain, 1);       // 賣25實收24G vs 賣24實收23G，多賺1G
+        assert.strictEqual(gap.marketMakingProfit, 0); // 24 買 25 賣實收 24，做市利潤 0
+    });
+
+    it("8.3 雪松原木 (385 vs 410): 25G 寬幅真空，做市利差可觀", () => {
+        const gap = calculateSpreadGap(410, 385, 0, "cedar_log");
+        assert.ok(gap !== null);
+        assert.strictEqual(gap.spreadGold, 25);
+        assert.ok(gap.gapCount >= 10);
+        assert.strictEqual(gap.topMakerBid, 386);     // 385 (首位3) 檔位增量為1 -> 386
+        assert.strictEqual(gap.topMakerAsk, 408);     // 410 (首位4) 檔位增量為2 -> 408
+        assert.strictEqual(gap.buySaving, 410 - 386); // 省 24G
+        assert.ok(gap.marketMakingProfit > 0);        // 做市具備充裕利潤
+    });
+
+    it("8.4 無效或倒掛盤口 (買價 >= 賣價) 返回 null", () => {
+        assert.strictEqual(calculateSpreadGap(60, 60, 0, "birch_log"), null);
+        assert.strictEqual(calculateSpreadGap(50, 60, 0, "birch_log"), null);
+        assert.strictEqual(calculateSpreadGap(null, 60, 0, "birch_log"), null);
     });
 });
 

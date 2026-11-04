@@ -319,15 +319,36 @@ function isMarketplaceOrderModal(modal) {
 
 function isElementVisible(el) {
     if (!el) return false;
-    if (typeof el.offsetParent !== 'undefined') {
-        return el.offsetParent !== null;
-    }
-    if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) {
+
+    // 1. 檢查 class 是否含有 hidden 或 hide (MWI 官方類別如 MarketplacePanel_hidden__eOmUA)
+    const className = el.className || (typeof el.getAttribute === 'function' ? el.getAttribute('class') : '');
+    if (typeof className === 'string' && /(?:^|\s|\b|_)(?:hidden|hide)(?:$|\s|\b|_)/i.test(className)) {
         return false;
     }
-    if (el.classList && (el.classList.contains && (el.classList.contains('hidden') || el.classList.contains('hide')))) {
+
+    // 2. 檢查內聯 style (display: none / visibility: hidden)
+    if (el.style) {
+        if (el.style.display === 'none' || el.style.visibility === 'hidden') return false;
+    }
+
+    // 3. 檢查 getComputedStyle (支援真實瀏覽器 DOM 計算樣式)
+    try {
+        if (typeof window !== 'undefined' && window.getComputedStyle) {
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden') {
+                return false;
+            }
+            if (parseFloat(style.height) === 0 && parseFloat(style.width) === 0 && style.overflow === 'hidden') {
+                return false;
+            }
+        }
+    } catch (e) {}
+
+    // 4. offsetParent 檢測 (若 offsetParent 為 null 且非固定定位，則必為不可見)
+    if (typeof el.offsetParent !== 'undefined' && el.offsetParent === null) {
         return false;
     }
+
     return true;
 }
 
@@ -336,19 +357,35 @@ function isElementVisible(el) {
 function isOrderBookView(marketPanel) {
     if (!marketPanel || !isElementVisible(marketPanel)) return false;
 
-    // 必須包含可見的 orderBooksContainer 或 orderBook
-    const orderBooks = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_orderBooksContainer"], [class*="MarketplacePanel_orderBook"]') : null;
-    const hasOrderBooks = isElementVisible(orderBooks) || Boolean(marketPanel.hasOrderBooks);
+    // 策略 1: 優先從 React Fiber state 取得 (正式機 100% 權威準確)
+    try {
+        const fiberKey = Object.keys(marketPanel).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+        if (fiberKey) {
+            let curr = marketPanel[fiberKey];
+            while (curr) {
+                if (curr.stateNode && curr.stateNode.state) {
+                    const { marketTabKey, marketListingsView } = curr.stateNode.state;
+                    if (marketTabKey && marketListingsView) {
+                        return marketTabKey === "MarketListings" && marketListingsView === "OrderBook";
+                    }
+                }
+                curr = curr.return;
+            }
+        }
+    } catch (e) {}
 
-    // 絕不能處於可見的「我的掛單」、「物資選擇」或「強化等級一覽」
+    // 策略 2: DOM 元素狀態判斷 (單元測試與無 Fiber 環境 fallback)
+    const orderBooks = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_orderBooksContainer"], [class*="MarketplacePanel_orderBook"]') : null;
+    const hasOrderBooks = (orderBooks && isElementVisible(orderBooks)) || Boolean(marketPanel.hasOrderBooks);
+
     const myListings = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_myListings"]') : null;
-    const isMyListings = isElementVisible(myListings) || Boolean(marketPanel.isMyListings);
+    const isMyListings = (myListings && isElementVisible(myListings)) || Boolean(marketPanel.isMyListings);
 
     const itemSelection = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_itemSelection"]') : null;
-    const isItemSelection = isElementVisible(itemSelection) || Boolean(marketPanel.isItemSelection);
+    const isItemSelection = (itemSelection && isElementVisible(itemSelection)) || Boolean(marketPanel.isItemSelection);
 
     const itemSummary = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_itemSummaryTableContainer"]') : null;
-    const isItemSummary = isElementVisible(itemSummary) || Boolean(marketPanel.isItemSummary);
+    const isItemSummary = (itemSummary && isElementVisible(itemSummary)) || Boolean(marketPanel.isItemSummary);
 
     return hasOrderBooks && !isMyListings && !isItemSelection && !isItemSummary;
 }

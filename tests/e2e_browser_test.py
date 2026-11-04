@@ -63,7 +63,7 @@ def run_e2e_test():
         driver.execute_script(mock_api_script)
 
         # 3. 注入 MWI 交易決策顧問油猴腳本 (完全同真實瀏覽器運行)
-        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.6)...")
+        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.7)...")
         driver.execute_script(userscript_code)
         time.sleep(1)
 
@@ -150,7 +150,29 @@ def run_e2e_test():
         bridge_text = bridge_bars[0].text
         assert "斷檔真空" in bridge_text, f"斷檔跨度指示條未正確識別真空: {bridge_text}"
 
-        print("   ✅ [PASS] 測試 3 通過：頂部買賣雙向速查卡與斷檔跨度指示條均精確渲染！")
+        # 驗證【左一 (Ask 1) 與 右一 (Bid 1) 行徽章與排隊耗時】正常且持續顯示
+        order_rows = driver.find_elements(By.CSS_SELECTOR, "[class*='MarketplacePanel_orderBooksContainer'] table tbody tr")
+        assert len(order_rows) >= 4, f"訂單簿行數不足: {len(order_rows)}"
+
+        # 左一 (Row 0): 最低賣價 (Ask 1: 68G)
+        left1_badge = order_rows[0].find_elements(By.CSS_SELECTOR, ".mwi-adv-row-badge")
+        assert len(left1_badge) >= 1, "❌ 重大缺陷：左一 (Ask 1) 缺少排隊時間徽章！"
+        left1_text = left1_badge[0].text
+        print(f"   [E2E-Verify] 左一徽章文字: {repr(left1_text)}")
+        assert "前排: 0" in left1_text, f"左一應為 0 件前排: {left1_text}"
+        assert any(t in left1_text for t in ["分鐘", "小時", "天", "秒"]), f"❌ 重大缺陷：左一未顯示排隊時間: {left1_text}"
+        assert "搶首位" in left1_text or "可插" in left1_text, f"左一缺少搶首位插隊提示: {left1_text}"
+
+        # 右一 (Row 2): 最高買價 (Bid 1: 62G)
+        right1_badge = order_rows[2].find_elements(By.CSS_SELECTOR, ".mwi-adv-row-badge")
+        assert len(right1_badge) >= 1, "❌ 重大缺陷：右一 (Bid 1) 缺少排隊時間徽章！"
+        right1_text = right1_badge[0].text
+        print(f"   [E2E-Verify] 右一徽章文字: {repr(right1_text)}")
+        assert "前排: 0" in right1_text, f"右一應為 0 件前排: {right1_text}"
+        assert any(t in right1_text for t in ["分鐘", "小時", "天", "秒"]), f"❌ 重大缺陷：右一未顯示排隊時間: {right1_text}"
+        assert "搶首位" in right1_text or "可插" in right1_text, f"右一缺少搶首位插隊提示: {right1_text}"
+
+        print("   ✅ [PASS] 測試 3 通過：頂部速查卡、斷檔跨度條及左一右一排隊時長均精確顯示！")
         passed_tests += 1
 
         # ───────────────────────────────────────────────────────────

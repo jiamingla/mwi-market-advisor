@@ -43,7 +43,7 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 [遠端即時熱重載 Loader]
 // @namespace    https://milkywayidle.com/
-// @version      1.3.6
+// @version      1.3.7
 // @description  遠端開發專用 Loader：在本地瀏覽器安裝一次，每次在遊戲按 F5 即可即時同步 GitHub 最新代碼！
 // @match        https://www.milkywayidle.com/*
 // @match        https://milkywayidlecn.com/*
@@ -94,7 +94,7 @@ npm test
 node tests/test_scenarios.js
 ```
 
-### 涵蓋的 9 大情境與 37 項單元測試案例
+### 涵蓋的 9 大情境與 39 項單元測試案例
 
 | 情境編號 | 交易情境類別 | 關鍵業務邏輯與驗證指標 | 測試案例項目 |
 | :--- | :--- | :--- | :--- |
@@ -106,7 +106,7 @@ node tests/test_scenarios.js
 | **情境 6** | **時間與排隊時薪防禦格式化** | 驗證時間格式化梯度（`0 秒`、`< 2 分鐘`、`~X 分鐘`、`~X 小時`、`~X 天`、`> 1 年 ⚠️`）與數值單位（K, M, B），時薪低於 50,000 G/hr 給予警示。 | • 6.1 時間格式化全梯度驗證<br>• 6.2 數值格式化全單位驗證 (K, M, B) |
 | **情境 7** | **掛單彈窗嚴格識別與隔離防護** | 徹底杜絕非市場彈窗（木工/手作/裝備背包/戰鬥等）被誤判為掛單彈窗，嚴格防止誤注入與污染。 | • 7.1 木工/製作木板彈窗判定為 false<br>• 7.2 物品詳情/背包彈窗判定為 false<br>• 7.3 市場購買掛牌彈窗判定為 true<br>• 7.4 市場出售掛牌彈窗判定為 true |
 | **情境 8** | **盤口斷檔真空與做市插隊試算**<br>(Spread Gap Engine) | 試算買賣盤口間真空檔位數、推薦插隊價、買方節省金額、賣方增益金額與做市套利空間。 | • 8.1 樺木原木 (62 vs 68): 精準計算 5 個真空檔位與做市空間<br>• 8.2 普通原木 (24 vs 25): 相鄰檔位無斷檔，正確標示 0 檔真空<br>• 8.3 雪松原木 (385 vs 410): 25G 寬幅真空，做市利差可觀<br>• 8.4 無效或倒掛盤口 (買價 >= 賣價) 返回 null<br>• 8.5 僅有單檔真空 (62 vs 64): 買賣雙方搶首位價重合在 63G |
-| **情境 9** | **市場各子視圖嚴格隔離與主動清理**<br>(我的掛單 / 全部物資 / 強化一覽) | 確保交易顧問僅在真實可見的物品「訂單簿 (OrderBook)」下渲染；切換至「我的掛單 (myListings)」、「全部物資」或「強化一覽」時立即徹底清除速查卡與跨度條。 | • 9.1 「我的掛單」視圖 isOrderBookView 判定為 false<br>• 9.2 「物資選擇目錄」視圖 isOrderBookView 判定為 false<br>• 9.3 「強化等級一覽」視圖 isOrderBookView 判定為 false<br>• 9.4 真實「訂單簿」視圖 isOrderBookView 判定為 true<br>• 9.5 cleanupAdvisorOverlay 徹底清除速查卡、跨度條與殘留標籤<br>• 9.6 即時吃單彈窗 (Buy Now) 正確識別為有效市場掛單彈窗 |
+| **情境 9** | **市場各子視圖嚴格隔離與主動清理**<br>(我的掛單 / 全部物資 / 強化一覽) | 確保交易顧問僅在真實可見的物品「訂單簿 (OrderBook)」下渲染；切換至「我的掛單 (myListings)」、「全部物資」或「強化一覽」時立即徹底清除速查卡與跨度條。 | • 9.1 「我的掛單」視圖 isOrderBookView 判定為 false<br>• 9.2 「物資選擇目錄」視圖 isOrderBookView 判定為 false<br>• 9.3 「強化等級一覽」視圖 isOrderBookView 判定為 false<br>• 9.4 真實「訂單簿」視圖 isOrderBookView 判定為 true<br>• 9.5 cleanupAdvisorOverlay 徹底清除速查卡、跨度條與殘留標籤<br>• 9.6 即時吃單彈窗 (Buy Now) 正確識別為有效市場掛單彈窗<br>• 9.7 正式機 MWI itemSelection 帶有 hidden class 時，isOrderBookView 正確判定為 true (不被 visibility:hidden 誤殺)<br>• 9.8 React Fiber State 權威判定：優先讀取 React 內部視圖狀態 |
 
 ---
 
@@ -122,7 +122,7 @@ npm run test:e2e
 #### E2E 測試驗證流程（全數 6 項通過）：
 1. **測試 1（木工製作木板）**：點擊製作樺木木板彈窗 $\rightarrow$ 驗證 0 個試算區塊與橫幅，保持 100% 乾淨。
 2. **測試 2（核心 Bug 重現：切換第二次木板）**：在彈窗內切換選擇「雪松木板」$\rightarrow$ 驗證 MutationObserver 觸發後依然 **0 誤注入**，不再顯示不想要的區塊！
-3. **測試 3（切換至市場交易）**：切換面板至 Marketplace $\rightarrow$ 驗證頂部決策橫幅與訂單簿深度標籤正常注入。
+3. **測試 3（切換至市場交易）**：切換面板至 Marketplace $\rightarrow$ 驗證頂部決策橫幅、雙向速查卡、斷檔跨度條以及**左一 (Ask 1) 與右一 (Bid 1) 的排隊小時與搶首位徽章精準顯示**。
 4. **測試 4（核心回歸：切換至「我的掛單」）**：點擊切換至「我的掛單 (My Listings)」標籤頁 $\rightarrow$ 驗證速查卡與斷檔跨度條 **100% 徹底清除（0 殘留）**，絕不出現不該出現的速查卡！切回市場行情後重新正常恢復。
 5. **測試 5（市場購買掛牌彈窗）**：點擊「購買掛牌」$\rightarrow$ 驗證試算器精準注入，一鍵填入首檔搶先價（63G）正常與輸入框雙向連動。
 6. **測試 6（跨面板防禦回歸）**：從市場切回木工並重複切換木板 $\rightarrow$ 驗證完全無殘留試算區塊或污染。
@@ -131,6 +131,14 @@ npm run test:e2e
 
 ## 📦 版本控制紀錄 (Changelog)
 
+* **`v1.3.7` (2026-11-05)**:
+  - **重大修復：左一右一排隊時長（幾小時）顯示修復與 visibility:hidden 判定健全化**：
+    - 修復正式機 MWI 在物品訂單簿下 `MarketplacePanel_itemSelection` 帶有 `visibility: hidden; height: 0; width: 0;` 時，舊版因 `offsetParent !== null` 誤判為可見，導致 `isOrderBookView` 恆為 false、進而觸發定時器每 800ms 無差別清除所有行徽章的致命 Bug。
+    - 實裝 **React Fiber State 權威判定**（優先讀取 React 內部視圖狀態 `marketTabKey === "MarketListings" && marketListingsView === "OrderBook"`），100% 精準對齊正式機！
+    - 強化 `isElementVisible`：加入 `hidden`/`hide` class 正則匹配與 `getComputedStyle` 檢測，徹底杜絕隱形元素的誤判。
+    - **DOM 價格與數量二次解析防禦**：訂單簿 DOM 重新解析時新增 `extractCleanCellText`，徹底剝離殘留的徽章與我的掛單標籤，防止價格與數量二次解析被污染。
+    - **左一右一徽章排版重構**：排隊時間 (`[前排: 0 | ~X 小時]`) 與搶首位標籤獨立排版，避免文字過長被截斷或擠壓。
+    - 單元測試擴充至 **9 大情境、39 項測試 100% 通過**；E2E 瀏覽器端到端測試 6 大驗證全數通過！
 * **`v1.3.6` (2026-11-05)**:
   - **重大修復**：徹底解決「我的掛單 (My Listings)」標籤頁誤出現速查卡與斷檔條的 Bug。
   - 建立可見度級別的 `isOrderBookView` 視圖守衛與 `cleanupAdvisorOverlay` 清理機制，嚴格限制速查卡與跨度條僅能在真實可見的物品訂單簿（OrderBook）中渲染。

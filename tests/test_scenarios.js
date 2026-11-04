@@ -537,6 +537,48 @@ describe("情境 9：市場視圖嚴格隔離 (我的掛單 / 全部物資 / 強
         };
         assert.strictEqual(isMarketplaceOrderModal(instantBuyModal), true);
     });
+
+    it("9.7 正式機 MWI itemSelection 帶有 hidden class 時，isOrderBookView 正確判定為 true (不被 visibility:hidden 誤殺)", () => {
+        const productionOrderBookPanel = {
+            offsetParent: {},
+            querySelector: (sel) => {
+                if (sel.includes("MarketplacePanel_orderBooksContainer")) return { offsetParent: {} };
+                // 模擬正式機 DOM：itemSelection 常駐但附帶 MarketplacePanel_hidden__eOmUA
+                if (sel.includes("MarketplacePanel_itemSelection")) return {
+                    className: "MarketplacePanel_itemSelection__3jDb- MarketplacePanel_hidden__eOmUA",
+                    offsetParent: {} // 注意：visibility:hidden 在 Blink 引擎中 offsetParent 依然不為 null
+                };
+                return null;
+            }
+        };
+        assert.strictEqual(isOrderBookView(productionOrderBookPanel), true);
+    });
+
+    it("9.8 React Fiber State 權威判定：優先讀取 React 內部視圖狀態", () => {
+        const fiberOrderBookPanel = {
+            __reactFiber$test: {
+                stateNode: {
+                    state: {
+                        marketTabKey: "MarketListings",
+                        marketListingsView: "OrderBook"
+                    }
+                }
+            }
+        };
+        assert.strictEqual(isOrderBookView(fiberOrderBookPanel), true);
+
+        const fiberMyListingsPanel = {
+            __reactFiber$test: {
+                stateNode: {
+                    state: {
+                        marketTabKey: "MyListings",
+                        marketListingsView: "OrderBook"
+                    }
+                }
+            }
+        };
+        assert.strictEqual(isOrderBookView(fiberMyListingsPanel), false);
+    });
 });
 
 console.log("==================================================");

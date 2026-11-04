@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.6
+// @version      1.3.7
 // @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精準限制僅於訂單簿視圖渲染速查卡與斷檔條，徹底杜絕「我的掛單/全部物資/強化一覽」及非市場彈窗誤注入，全場景自動化 E2E 瀏覽器測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.6 (我的掛單與非訂單簿視圖徹底隔離版) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.7 (修復首檔排隊小時顯示與 visibility:hidden 判定) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -352,15 +352,36 @@
 
     function isElementVisible(el) {
         if (!el) return false;
-        if (typeof el.offsetParent !== 'undefined') {
-            return el.offsetParent !== null;
-        }
-        if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) {
+
+        // 1. 檢查 class 是否含有 hidden 或 hide (MWI 官方類別如 MarketplacePanel_hidden__eOmUA)
+        const className = el.className || (typeof el.getAttribute === 'function' ? el.getAttribute('class') : '');
+        if (typeof className === 'string' && /(?:^|\s|\b|_)(?:hidden|hide)(?:$|\s|\b|_)/i.test(className)) {
             return false;
         }
-        if (el.classList && (el.classList.contains('hidden') || el.classList.contains('hide'))) {
+
+        // 2. 檢查內聯 style (display: none / visibility: hidden)
+        if (el.style) {
+            if (el.style.display === 'none' || el.style.visibility === 'hidden') return false;
+        }
+
+        // 3. 檢查 getComputedStyle (支援真實瀏覽器 DOM 計算樣式)
+        try {
+            if (typeof window !== 'undefined' && window.getComputedStyle) {
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') {
+                    return false;
+                }
+                if (parseFloat(style.height) === 0 && parseFloat(style.width) === 0 && style.overflow === 'hidden') {
+                    return false;
+                }
+            }
+        } catch (e) {}
+
+        // 4. offsetParent 檢測 (若 offsetParent 為 null 且非固定定位，則必為不可見)
+        if (typeof el.offsetParent !== 'undefined' && el.offsetParent === null) {
             return false;
         }
+
         return true;
     }
 
@@ -369,19 +390,35 @@
     function isOrderBookView(marketPanel) {
         if (!marketPanel || !isElementVisible(marketPanel)) return false;
 
-        // 必須包含可見的 orderBooksContainer 或 orderBook
-        const orderBooks = marketPanel.querySelector('[class*="MarketplacePanel_orderBooksContainer"], [class*="MarketplacePanel_orderBook"]');
-        const hasOrderBooks = isElementVisible(orderBooks);
+        // 策略 1: 優先從 React Fiber state 取得 (正式機 100% 權威準確)
+        try {
+            const fiberKey = Object.keys(marketPanel).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+            if (fiberKey) {
+                let curr = marketPanel[fiberKey];
+                while (curr) {
+                    if (curr.stateNode && curr.stateNode.state) {
+                        const { marketTabKey, marketListingsView } = curr.stateNode.state;
+                        if (marketTabKey && marketListingsView) {
+                            return marketTabKey === "MarketListings" && marketListingsView === "OrderBook";
+                        }
+                    }
+                    curr = curr.return;
+                }
+            }
+        } catch (e) {}
 
-        // 絕不能處於可見的「我的掛單」、「全部物資」或「強化等級一覽」
-        const myListings = marketPanel.querySelector('[class*="MarketplacePanel_myListings"]');
-        const isMyListings = isElementVisible(myListings);
+        // 策略 2: DOM 元素狀態判斷 (單元測試與無 Fiber 環境 fallback)
+        const orderBooks = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_orderBooksContainer"], [class*="MarketplacePanel_orderBook"]') : null;
+        const hasOrderBooks = (orderBooks && isElementVisible(orderBooks)) || Boolean(marketPanel.hasOrderBooks);
 
-        const itemSelection = marketPanel.querySelector('[class*="MarketplacePanel_itemSelection"]');
-        const isItemSelection = isElementVisible(itemSelection);
+        const myListings = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_myListings"]') : null;
+        const isMyListings = (myListings && isElementVisible(myListings)) || Boolean(marketPanel.isMyListings);
 
-        const itemSummary = marketPanel.querySelector('[class*="MarketplacePanel_itemSummaryTableContainer"]');
-        const isItemSummary = isElementVisible(itemSummary);
+        const itemSelection = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_itemSelection"]') : null;
+        const isItemSelection = (itemSelection && isElementVisible(itemSelection)) || Boolean(marketPanel.isItemSelection);
+
+        const itemSummary = marketPanel.querySelector ? marketPanel.querySelector('[class*="MarketplacePanel_itemSummaryTableContainer"]') : null;
+        const isItemSummary = (itemSummary && isElementVisible(itemSummary)) || Boolean(marketPanel.isItemSummary);
 
         return hasOrderBooks && !isMyListings && !isItemSelection && !isItemSummary;
     }
@@ -482,6 +519,13 @@
         return { itemId, enhancementLevel };
     }
 
+    function extractCleanCellText(td) {
+        if (!td) return "";
+        const clone = td.cloneNode(true);
+        clone.querySelectorAll?.('.mwi-adv-row-badge, .mwi-adv-snip-tag, .mwi-adv-my-tag').forEach(e => e.remove());
+        return clone.textContent.trim();
+    }
+
     function parseOrderBookFromDOM() {
         const marketPanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
         if (!marketPanel || !isOrderBookView(marketPanel)) return null;
@@ -501,8 +545,8 @@
         askTable.querySelectorAll("tbody tr").forEach(tr => {
             const tds = tr.querySelectorAll("td");
             if (tds.length >= 2) {
-                const count = parseQty(tds[0].textContent);
-                const price = parseQty(tds[1].textContent);
+                const count = parseQty(extractCleanCellText(tds[0]));
+                const price = parseQty(extractCleanCellText(tds[1]));
                 const isMine = tr.textContent.includes("取消") || tr.querySelector('button[class*="Button_danger"]') !== null;
                 if (price > 0 && count > 0) {
                     asks.push({ price, count, isMine, trElement: tr });
@@ -513,8 +557,8 @@
         bidTable.querySelectorAll("tbody tr").forEach(tr => {
             const tds = tr.querySelectorAll("td");
             if (tds.length >= 2) {
-                const count = parseQty(tds[0].textContent);
-                const price = parseQty(tds[1].textContent);
+                const count = parseQty(extractCleanCellText(tds[0]));
+                const price = parseQty(extractCleanCellText(tds[1]));
                 const isMine = tr.textContent.includes("取消") || tr.querySelector('button[class*="Button_danger"]') !== null;
                 if (price > 0 && count > 0) {
                     bids.push({ price, count, isMine, trElement: tr });
@@ -1157,7 +1201,8 @@
         else if (etaHours < 2) etaColor = "#10b981";
 
         badge.style.color = etaColor;
-        badge.innerHTML = `[前排: ${formatNumber(aheadCount)} | ${formatTime(etaHours)}]${snipTag ? ` <span class="mwi-adv-snip-tag">${snipTag}</span>` : ''}`;
+        const etaText = `[前排: ${formatNumber(aheadCount)} | ${formatTime(etaHours)}]`;
+        badge.innerHTML = `<span class="mwi-adv-eta-text">${etaText}</span>${snipTag ? ` <span class="mwi-adv-snip-tag">${snipTag}</span>` : ''}`;
 
         if (isMine) {
             tr.classList.add("mwi-adv-my-order-highlight");
@@ -1407,11 +1452,17 @@
                 line-height: 1.4;
             }
             .mwi-adv-row-badge {
-                display: inline-block;
-                margin-left: 8px;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                margin-left: 6px;
                 font-size: 11px;
                 font-weight: 600;
-                opacity: 0.85;
+                opacity: 0.9;
+                white-space: nowrap;
+            }
+            .mwi-adv-eta-text {
+                display: inline-block;
             }
             .mwi-adv-my-order-highlight {
                 background: rgba(245, 158, 11, 0.12) !important;
@@ -1706,7 +1757,11 @@
             .mwi-adv-snip-tag {
                 color: #38bdf8;
                 font-size: 10px;
-                font-weight: 600;
+                font-weight: 700;
+                background: rgba(56, 189, 248, 0.15);
+                border: 1px solid rgba(56, 189, 248, 0.4);
+                padding: 1px 4px;
+                border-radius: 3px;
                 margin-left: 4px;
             }
         `;

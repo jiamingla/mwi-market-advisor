@@ -43,7 +43,7 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 [遠端即時熱重載 Loader]
 // @namespace    https://milkywayidle.com/
-// @version      1.3.7
+// @version      1.3.8
 // @description  遠端開發專用 Loader：在本地瀏覽器安裝一次，每次在遊戲按 F5 即可即時同步 GitHub 最新代碼！
 // @match        https://www.milkywayidle.com/*
 // @match        https://milkywayidlecn.com/*
@@ -131,6 +131,12 @@ npm run test:e2e
 
 ## 📦 版本控制紀錄 (Changelog)
 
+* **`v1.3.8` (2026-11-05)**:
+  - **重大體驗優化**：超緊湊高密度看板與一鍵收合速查卡，徹底解決訂單簿「底下變少窄」問題。
+  - **可關閉速查卡 (Toggleable Quick Cards)**：頂部買賣速查卡新增 `[💡 展開速查卡 / ✕ 關閉速查卡]` 按鈕，並以 `localStorage`（`mwi_adv_show_quick_cards`）持久保存使用者的偏好設定。
+  - **預設極簡收合**：預設收合龐大的速查卡為僅 24px 高之高密度狀態橫幅，斷檔跨度條亦精簡至 34px，**立即釋放超過 230px 垂直高度**，訂單簿可完整展示 8~10 行訂單，不再被聊天室遮蔽！
+  - **DOM 簽名緩存 (Signature Memoization)**：杜絕每 800ms 無謂重新賦值 `innerHTML`，徹底消除 DOM 閃爍與記憶體開銷。
+  - **E2E 自動化測試擴充**：驗證預設收合、點擊展開、再次點擊收合之完整使用者流程與深度標籤排隊預估（單元測試 39 項 + E2E 測試 6 項全數通過）。
 * **`v1.3.7` (2026-11-05)**:
   - **重大修復：左一右一排隊時長（幾小時）顯示修復與 visibility:hidden 判定健全化**：
     - 修復正式機 MWI 在物品訂單簿下 `MarketplacePanel_itemSelection` 帶有 `visibility: hidden; height: 0; width: 0;` 時，舊版因 `offsetParent !== null` 誤判為可見，導致 `isOrderBookView` 恆為 false、進而觸發定時器每 800ms 無差別清除所有行徽章的致命 Bug。

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.7
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精準限制僅於訂單簿視圖渲染速查卡與斷檔條，徹底杜絕「我的掛單/全部物資/強化一覽」及非市場彈窗誤注入，全場景自動化 E2E 瀏覽器測試驗證。
+// @version      1.3.8
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精簡高密度看板設計，一鍵收合，完美釋放下方訂單簿空間，全場景自動化 E2E 瀏覽器測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.7 (修復首檔排隊小時顯示與 visibility:hidden 判定) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.8 (超緊湊高密度看板與一鍵收合版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -979,15 +979,27 @@
         const taxRate = getItemTaxRate(itemId);
         const dailyAvg = (historyInfo && typeof historyInfo.dailyAvg === 'number') ? historyInfo.dailyAvg : 0;
 
+        // 讀取速查卡收合狀態 (預設為 false 關閉，避免擠佔下方訂單簿高度)
+        let showQuickCards = false;
+        try {
+            showQuickCards = localStorage.getItem("mwi_adv_show_quick_cards") === "true";
+        } catch (e) {}
+
+        const signature = `${itemId}_${enhancementLevel}_${bestAsk}_${bestBid}_${showQuickCards}_${gapInfo?.gapCount}`;
+        if (banner.dataset.signature === signature) {
+            return;
+        }
+        banner.dataset.signature = signature;
+
         let burstCardHtml = "";
-        if (historyInfo?.isBurstItem) {
+        if (showQuickCards && historyInfo?.isBurstItem) {
             burstCardHtml = `
                 <div class="mwi-adv-burst-pill">
                     <span>🐋 大單週期特性</span>: 
                     <b>平均每 ${historyInfo.burstDays || '3~4'} 天一次集中掃貨 (歷史單筆最高 ${formatNumber(historyInfo.maxBurst)} 件)</b>
                 </div>
             `;
-        } else if (historyInfo?.isLowLiquidityGear) {
+        } else if (showQuickCards && historyInfo?.isLowLiquidityGear) {
             burstCardHtml = `
                 <div class="mwi-adv-gear-pill">
                     <span>⏳ 低流速裝備特性</span>: 
@@ -996,9 +1008,9 @@
             `;
         }
 
-        // 買家 vs 賣家 雙向速查決策卡
+        // 買家 vs 賣家 雙向速查決策卡 (僅在使用者展開時渲染)
         let decisionGridHtml = "";
-        if (gapInfo) {
+        if (showQuickCards && gapInfo) {
             const dumpNet = computeSellerNetPerItem(bestBid, gapInfo.taxRate);
             const makerNet = computeSellerNetPerItem(gapInfo.topMakerAsk, gapInfo.taxRate);
             const mmProfitText = gapInfo.marketMakingProfit > 0
@@ -1056,9 +1068,9 @@
         }
 
         banner.innerHTML = `
-            <div class="mwi-adv-header">
+            <div class="mwi-adv-header" style="${showQuickCards ? 'margin-bottom: 6px;' : 'margin-bottom: 0;'}">
                 <div class="mwi-adv-title">
-                    <span class="mwi-adv-logo">📊</span> 智慧交易決策顧問
+                    <span class="mwi-adv-logo">📊</span> 智慧交易顧問
                     ${enhancementLevel > 0 ? `<span class="mwi-adv-level-badge">+${enhancementLevel} 級</span>` : ''}
                     <span class="mwi-adv-tax-badge">交易稅 ${(taxRate * 100).toFixed(0)}%</span>
                 </div>
@@ -1069,11 +1081,29 @@
                     <span class="mwi-adv-tag" style="color: #38bdf8; border-color: #0284c7;">
                         全服日均: <b>${dailyAvg >= 10 ? formatNumber(dailyAvg) : dailyAvg.toFixed(1)}/天</b>
                     </span>
+                    <button type="button" id="mwi-adv-toggle-cards" class="mwi-adv-toggle-btn" title="切換顯示買賣決策速查卡">
+                        ${showQuickCards ? '✕ 關閉速查卡' : '💡 展開速查卡'}
+                    </button>
                 </div>
             </div>
             ${burstCardHtml}
             ${decisionGridHtml}
         `;
+
+        // 綁定收合/展開事件
+        const toggleBtn = banner.querySelector("#mwi-adv-toggle-cards");
+        if (toggleBtn) {
+            toggleBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    const current = localStorage.getItem("mwi_adv_show_quick_cards") === "true";
+                    localStorage.setItem("mwi_adv_show_quick_cards", String(!current));
+                } catch (err) {}
+                banner.dataset.signature = "";
+                renderAdvisorOverlay();
+            };
+        }
     }
 
     // ── 12.5 表格第一行斷檔跨度指示條 (Spread Gap Bridge Bar) ───────
@@ -1095,6 +1125,12 @@
             bar.className = "mwi-adv-spread-bridge-bar";
             orderBooksContainer.parentElement.insertBefore(bar, orderBooksContainer);
         }
+
+        const bridgeSignature = `${gapInfo.bestAsk}_${gapInfo.bestBid}_${gapInfo.gapCount}`;
+        if (bar.dataset.signature === bridgeSignature) {
+            return;
+        }
+        bar.dataset.signature = bridgeSignature;
 
         let ticksHtml = "";
         if (gapInfo.gapCount === 0) {
@@ -1376,31 +1412,32 @@
         const style = document.createElement("style");
         style.textContent = `
             .mwi-advisor-top-banner {
-                margin: 8px 0 12px 0;
-                padding: 10px 14px;
+                margin: 4px 0 6px 0;
+                padding: 5px 10px;
                 background: #0f111a;
                 border: 1px solid #1e2235;
-                border-radius: 8px;
-                font-size: 12px;
+                border-radius: 6px;
+                font-size: 11px;
                 color: #e2e8f0;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
             }
             .mwi-adv-header {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 8px;
+                gap: 8px;
             }
             .mwi-adv-title {
                 font-weight: 700;
-                font-size: 13px;
+                font-size: 12px;
                 color: #f8fafc;
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 6px;
+                white-space: nowrap;
             }
             .mwi-adv-level-badge {
-                padding: 1px 6px;
+                padding: 1px 5px;
                 background: #8b5cf6;
                 color: #ffffff;
                 border-radius: 4px;
@@ -1408,7 +1445,7 @@
                 font-weight: 700;
             }
             .mwi-adv-tax-badge {
-                padding: 1px 6px;
+                padding: 1px 5px;
                 background: #3b82f6;
                 color: #ffffff;
                 border-radius: 4px;
@@ -1417,49 +1454,73 @@
             }
             .mwi-adv-metrics {
                 display: flex;
-                gap: 8px;
+                align-items: center;
+                gap: 6px;
+                flex-wrap: wrap;
             }
             .mwi-adv-tag {
-                padding: 3px 8px;
+                padding: 2px 7px;
                 background: #1a1d2e;
                 border: 1px solid #2d3748;
                 border-radius: 4px;
                 font-size: 11px;
+                white-space: nowrap;
+            }
+            .mwi-adv-toggle-btn {
+                padding: 2px 8px;
+                background: #1e293b;
+                border: 1px solid #3b82f6;
+                border-radius: 4px;
+                color: #60a5fa;
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.15s ease;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                white-space: nowrap;
+            }
+            .mwi-adv-toggle-btn:hover {
+                background: #2563eb;
+                color: #ffffff;
+                border-color: #60a5fa;
             }
             .mwi-adv-burst-pill {
-                padding: 4px 10px;
+                padding: 3px 8px;
                 background: rgba(14, 165, 233, 0.12);
                 border: 1px solid rgba(14, 165, 233, 0.3);
-                border-radius: 5px;
+                border-radius: 4px;
                 font-size: 11px;
                 color: #38bdf8;
-                margin-bottom: 8px;
+                margin-top: 6px;
             }
             .mwi-adv-gear-pill {
-                padding: 4px 10px;
+                padding: 3px 8px;
                 background: rgba(245, 158, 11, 0.12);
                 border: 1px solid rgba(245, 158, 11, 0.3);
-                border-radius: 5px;
+                border-radius: 4px;
                 font-size: 11px;
                 color: #fcd34d;
-                margin-bottom: 8px;
+                margin-top: 6px;
             }
             .mwi-adv-rec-box {
-                padding: 8px 12px;
+                padding: 6px 10px;
                 border-radius: 6px;
                 border: 1px solid;
                 font-weight: 500;
-                line-height: 1.4;
+                line-height: 1.3;
             }
             .mwi-adv-row-badge {
                 display: inline-flex;
                 align-items: center;
-                gap: 4px;
-                margin-left: 6px;
-                font-size: 11px;
+                gap: 3px;
+                margin-left: 4px;
+                font-size: 10px;
                 font-weight: 600;
                 opacity: 0.9;
                 white-space: nowrap;
+                line-height: 1.1;
             }
             .mwi-adv-eta-text {
                 display: inline-block;
@@ -1479,11 +1540,11 @@
                 font-weight: 700;
             }
             .mwi-adv-modal-calc {
-                margin-top: 10px;
-                margin-bottom: 10px;
+                margin-top: 8px;
+                margin-bottom: 8px;
             }
             .mwi-adv-calc-box {
-                padding: 10px 12px;
+                padding: 8px 10px;
                 background: #0f111a;
                 border: 1px solid #2d3748;
                 border-radius: 6px;
@@ -1495,7 +1556,7 @@
                 align-items: center;
                 font-weight: 700;
                 color: #cbd5e1;
-                margin-bottom: 8px;
+                margin-bottom: 6px;
                 border-bottom: 1px solid #1e2235;
                 padding-bottom: 4px;
             }
@@ -1511,7 +1572,7 @@
             .mwi-adv-calc-grid {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                gap: 6px 12px;
+                gap: 4px 10px;
                 color: #94a3b8;
             }
             .mwi-adv-calc-grid b {
@@ -1520,7 +1581,7 @@
             .mwi-adv-tick-info {
                 display: flex;
                 justify-content: space-between;
-                margin-top: 6px;
+                margin-top: 5px;
                 font-size: 11px;
                 color: #64748b;
             }
@@ -1528,8 +1589,8 @@
                 color: #cbd5e1;
             }
             .mwi-adv-wage-line {
-                margin-top: 8px;
-                padding-top: 6px;
+                margin-top: 6px;
+                padding-top: 5px;
                 border-top: 1px dashed #1e2235;
                 font-size: 11px;
                 color: #94a3b8;
@@ -1540,9 +1601,9 @@
                 font-weight: 600;
             }
             .mwi-adv-rec-line {
-                margin-top: 8px;
+                margin-top: 6px;
                 font-size: 11px;
-                line-height: 1.4;
+                line-height: 1.35;
                 padding: 4px 8px;
                 border-radius: 4px;
                 background: rgba(255, 255, 255, 0.04);
@@ -1550,11 +1611,11 @@
             .mwi-adv-quick-actions {
                 display: flex;
                 gap: 8px;
-                margin-top: 10px;
+                margin-top: 8px;
             }
             .mwi-adv-quick-btn {
                 flex: 1;
-                padding: 7px 10px;
+                padding: 6px 10px;
                 border: none;
                 border-radius: 4px;
                 font-size: 11px;
@@ -1582,11 +1643,11 @@
             .mwi-adv-decision-grid {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                gap: 10px;
-                margin-top: 10px;
+                gap: 8px;
+                margin-top: 8px;
             }
             .mwi-adv-side-card {
-                padding: 10px 12px;
+                padding: 8px 10px;
                 border-radius: 6px;
                 background: #141824;
                 border: 1px solid #23293d;
@@ -1603,13 +1664,13 @@
                 align-items: center;
                 font-weight: 700;
                 font-size: 11px;
-                margin-bottom: 6px;
+                margin-bottom: 4px;
             }
             .mwi-adv-side-title .buy { color: #34d399; }
             .mwi-adv-side-title .sell { color: #fbbf24; }
             .mwi-adv-side-badge {
                 font-size: 10px;
-                padding: 1px 5px;
+                padding: 1px 4px;
                 border-radius: 3px;
                 font-weight: 700;
             }
@@ -1627,53 +1688,53 @@
                 display: flex;
                 align-items: baseline;
                 gap: 6px;
-                margin-bottom: 4px;
+                margin-bottom: 3px;
             }
-            .mwi-adv-price.buy { color: #10b981; font-weight: 800; font-size: 14px; }
-            .mwi-adv-price.sell { color: #f59e0b; font-weight: 800; font-size: 14px; }
+            .mwi-adv-price.buy { color: #10b981; font-weight: 800; font-size: 13px; }
+            .mwi-adv-price.sell { color: #f59e0b; font-weight: 800; font-size: 13px; }
             .mwi-adv-saving {
-                font-size: 11px;
+                font-size: 10px;
                 color: #94a3b8;
             }
             .mwi-adv-desc-row {
-                font-size: 11px;
+                font-size: 10px;
                 color: #cbd5e1;
-                margin-bottom: 3px;
+                margin-bottom: 2px;
             }
             .mwi-adv-alt-row {
                 font-size: 10px;
                 color: #64748b;
                 border-top: 1px dashed #23293d;
-                padding-top: 4px;
-                margin-top: 4px;
+                padding-top: 3px;
+                margin-top: 3px;
             }
             .mwi-adv-mm-bar {
-                margin-top: 8px;
-                padding: 4px 8px;
+                margin-top: 6px;
+                padding: 3px 6px;
                 background: rgba(255, 255, 255, 0.03);
                 border-radius: 4px;
-                font-size: 11px;
+                font-size: 10px;
                 text-align: center;
             }
 
             /* 斷檔幅度指示條 (Spread Gap Bridge Bar) */
             .mwi-adv-spread-bridge-bar {
-                margin: 8px 0 10px 0;
-                padding: 8px 12px;
+                margin: 3px 0 5px 0;
+                padding: 4px 8px;
                 background: #111420;
                 border: 1px solid #1f2538;
-                border-radius: 6px;
+                border-radius: 5px;
                 font-size: 11px;
             }
             .mwi-adv-bridge-header {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 6px;
+                margin-bottom: 3px;
             }
             .mwi-adv-bridge-status {
-                padding: 2px 6px;
-                border-radius: 4px;
+                padding: 1px 5px;
+                border-radius: 3px;
                 font-weight: 700;
                 font-size: 10px;
             }
@@ -1692,14 +1753,17 @@
                 color: #6ee7b7;
                 border: 1px solid rgba(16, 185, 129, 0.3);
             }
+            .mwi-adv-bridge-gap-info {
+                font-size: 10px;
+            }
             .mwi-adv-bridge-ruler {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                gap: 8px;
+                gap: 6px;
                 background: #090b12;
-                padding: 6px 10px;
-                border-radius: 5px;
+                padding: 3px 6px;
+                border-radius: 4px;
                 border: 1px solid #1a1e2d;
             }
             .mwi-adv-ruler-anchor {
@@ -1752,7 +1816,7 @@
             }
             .mwi-adv-ruler-tight {
                 color: #64748b;
-                font-size: 11px;
+                font-size: 10px;
             }
             .mwi-adv-snip-tag {
                 color: #38bdf8;

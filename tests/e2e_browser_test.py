@@ -63,7 +63,7 @@ def run_e2e_test():
         driver.execute_script(mock_api_script)
 
         # 3. 注入 MWI 交易決策顧問油猴腳本 (完全同真實瀏覽器運行)
-        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.7)...")
+        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.8)...")
         driver.execute_script(userscript_code)
         time.sleep(1)
 
@@ -134,15 +134,33 @@ def run_e2e_test():
 
         assert len(banners_step3) >= 1, "市場面板頂部顧問橫幅未能正常注入！"
         banner_text = banners_step3[0].text
-        assert "交易決策顧問" in banner_text or "智慧交易決策顧問" in banner_text, f"橫幅內容不正確: {banner_text}"
+        assert "交易顧問" in banner_text, f"橫幅內容不正確: {banner_text}"
 
-        # 驗證【買家 vs 賣家 雙向速查決策卡】正常渲染
+        # 驗證【預設收合速查卡】：預設關閉以釋放訂單簿高度，解決「底下變少窄」
+        toggle_btn = driver.find_element(By.ID, "mwi-adv-toggle-cards")
+        assert "展開速查卡" in toggle_btn.text, f"預設狀態應為「💡 展開速查卡」，實際為: {toggle_btn.text}"
+        initial_cards = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-side-card")
+        assert len(initial_cards) == 0, f"預設狀態下速查卡應收合隱藏，實際數量: {len(initial_cards)}"
+
+        # 點擊展開速查卡
+        toggle_btn.click()
+        time.sleep(0.5)
+        toggle_btn = driver.find_element(By.ID, "mwi-adv-toggle-cards")
         decision_cards = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-side-card")
-        assert len(decision_cards) == 2, f"雙向速查決策卡數量異常: {len(decision_cards)}"
+        assert len(decision_cards) == 2, f"點擊展開後雙向速查決策卡數量異常: {len(decision_cards)}"
+        assert "關閉速查卡" in toggle_btn.text, f"展開後按鈕應變為「✕ 關閉速查卡」，實際為: {toggle_btn.text}"
         buyer_card_text = decision_cards[0].text
         seller_card_text = decision_cards[1].text
         assert "買家" in buyer_card_text and "推薦買價" in buyer_card_text, f"買家決策卡內容缺失: {buyer_card_text}"
         assert "賣家" in seller_card_text and "推薦賣價" in seller_card_text, f"賣家決策卡內容缺失: {seller_card_text}"
+
+        # 再次點擊關閉速查卡，驗證一鍵收合
+        toggle_btn.click()
+        time.sleep(0.5)
+        toggle_btn = driver.find_element(By.ID, "mwi-adv-toggle-cards")
+        closed_cards = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-side-card")
+        assert len(closed_cards) == 0, f"再次點擊後速查卡未完全收合，剩餘數量: {len(closed_cards)}"
+        assert "展開速查卡" in toggle_btn.text, f"收合後按鈕應還原為「💡 展開速查卡」，實際為: {toggle_btn.text}"
 
         # 驗證【表格第一行斷檔跨度指示條】正常渲染
         bridge_bars = driver.find_elements(By.CSS_SELECTOR, ".mwi-adv-spread-bridge-bar")

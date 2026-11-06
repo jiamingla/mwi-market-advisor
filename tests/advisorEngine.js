@@ -92,6 +92,16 @@ function formatNumber(num) {
     return Math.round(num).toLocaleString();
 }
 
+function formatPrice(val, withGForSmall = true) {
+    if (val === null || val === undefined || isNaN(val)) return "--";
+    const num = Number(val);
+    const abs = Math.abs(num);
+    if (abs >= 1e9) return parseFloat((num / 1e9).toFixed(2)) + "B";
+    if (abs >= 1e6) return parseFloat((num / 1e6).toFixed(2)) + "M";
+    if (abs >= 1e3) return parseFloat((num / 1e3).toFixed(1)) + "K";
+    return Math.round(num) + (withGForSmall ? "G" : "");
+}
+
 function formatTime(hours) {
     if (!isFinite(hours) || hours > 24 * 365) return "> 1 年 ⚠️";
     if (hours <= 0) return "⚡ 立即成交 (0 秒)";
@@ -173,7 +183,7 @@ function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
                 etaHours: 0,
                 diffTotal: 0,
                 wagePerHour: 0,
-                advice: `🟢 出價已達最低賣價 (${bestAsk}G)，送出後將「立刻成交」，耗時 0 秒！`,
+                advice: `🟢 出價已達最低賣價 (${formatPrice(bestAsk)})，送出後將「立刻成交」，耗時 0 秒！`,
                 instantPrice,
                 topMakerPrice,
                 taxRate,
@@ -193,7 +203,7 @@ function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
                 etaHours: estHours,
                 diffTotal: diffVsInstant,
                 wagePerHour: wage,
-                advice: `🟡 成功搶佔買單第 1 順位 (出價 ${price}G)！比直接以 ${bestAsk || '--'}G 吃單共省下 ${formatNumber(diffVsInstant)}G。`,
+                advice: `🟡 成功搶佔買單第 1 順位 (出價 ${formatPrice(price)})！比直接以 ${bestAsk ? formatPrice(bestAsk) : '--'} 吃單共省下 ${formatPrice(diffVsInstant)}。`,
                 instantPrice,
                 topMakerPrice,
                 taxRate,
@@ -224,7 +234,7 @@ function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
             etaHours,
             diffTotal: diffVsInstant,
             wagePerHour: wage,
-            advice: `🔴 前方有 ${formatNumber(aheadCount)} 件出價更高的買單排隊！建議提價至 ${topMakerPrice}G 搶排首檔。`,
+            advice: `🔴 前方有 ${formatNumber(aheadCount)} 件出價更高的買單排隊！建議提價至 ${formatPrice(topMakerPrice)} 搶排首檔。`,
             instantPrice,
             topMakerPrice,
             taxRate,
@@ -245,7 +255,7 @@ function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
             etaHours: 0,
             diffTotal: 0,
             wagePerHour: 0,
-            advice: `🟢 賣價已達最高收購價 (${bestBid}G)，送出後將「立刻成交」換得金幣！`,
+            advice: `🟢 賣價已達最高收購價 (${formatPrice(bestBid)})，送出後將「立刻成交」換得金幣！`,
             instantPrice,
             topMakerPrice,
             taxRate,
@@ -264,7 +274,7 @@ function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
             etaHours: estHours,
             diffTotal,
             wagePerHour: wage,
-            advice: `🟡 成功搶佔賣單第 1 順位 (定價 ${price}G，稅後實得 ${netAtUserPrice}G/件)！比直接吃單每件多賺 ${netAtUserPrice - netAtInstant}G。`,
+            advice: `🟡 成功搶佔賣單第 1 順位 (定價 ${formatPrice(price)}，稅後實得 ${formatPrice(netAtUserPrice)}/件)！比直接吃單每件多賺 ${formatPrice(netAtUserPrice - netAtInstant)}。`,
             instantPrice,
             topMakerPrice,
             taxRate,
@@ -294,7 +304,7 @@ function calculateTradeDecision(modalState, asks, bids, historyInfo, itemHrid) {
         etaHours,
         diffTotal,
         wagePerHour: wage,
-        advice: `🔴 前方有 ${formatNumber(aheadCount)} 件更低價的賣單排隊！建議降價至 ${topMakerPrice}G 搶排首檔，避免滯銷。`,
+        advice: `🔴 前方有 ${formatNumber(aheadCount)} 件更低價的賣單排隊！建議降價至 ${formatPrice(topMakerPrice)} 搶排首檔，避免滯銷。`,
         instantPrice,
         topMakerPrice,
         taxRate,
@@ -459,6 +469,7 @@ module.exports = {
     getItemTaxRate,
     computeSellerNetPerItem,
     formatNumber,
+    formatPrice,
     formatTime,
     calculateTradeDecision,
     isMarketplaceOrderModal,

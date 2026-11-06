@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.8
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精簡高密度看板設計，一鍵收合，完美釋放下方訂單簿空間，全場景自動化 E2E 瀏覽器測試驗證。
+// @version      1.3.9
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精簡高密度看板設計，一鍵收合，盤口百萬級大數自動轉換為 M / K / B 單位，全場景自動化 E2E 瀏覽器測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.8 (超緊湊高密度看板與一鍵收合版) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.9 (盤口大數 M/K/B 單位格式化版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -132,6 +132,17 @@
         if (Math.abs(num) >= 1e3) return (num / 1e3).toFixed(1) + "K";
         if (num > 0 && num < 10) return num.toFixed(1);
         return Math.round(num).toLocaleString();
+    }
+
+    // 格式化金幣價格為簡明單位 (如 44M, 38.4M, 4.8K, 67G)，支援 title 屬性完整還原精確值
+    function formatPrice(val, withGForSmall = true) {
+        if (val === null || val === undefined || isNaN(val)) return "--";
+        const num = Number(val);
+        const abs = Math.abs(num);
+        if (abs >= 1e9) return parseFloat((num / 1e9).toFixed(2)) + "B";
+        if (abs >= 1e6) return parseFloat((num / 1e6).toFixed(2)) + "M";
+        if (abs >= 1e3) return parseFloat((num / 1e3).toFixed(1)) + "K";
+        return Math.round(num) + (withGForSmall ? "G" : "");
     }
 
     function formatTime(hours) {
@@ -748,7 +759,7 @@
                     etaHours: 0,
                     diffTotal: 0,
                     wagePerHour: 0,
-                    advice: `🟢 出價已達最低賣價 (${bestAsk}G)，送出後將「立刻成交」，耗時 0 秒！`,
+                    advice: `🟢 出價已達最低賣價 (${formatPrice(bestAsk)})，送出後將「立刻成交」，耗時 0 秒！`,
                     instantPrice,
                     topMakerPrice,
                     taxRate,
@@ -768,7 +779,7 @@
                     etaHours: estHours,
                     diffTotal: diffVsInstant,
                     wagePerHour: wage,
-                    advice: `🟡 成功搶佔買單第 1 順位 (出價 ${price}G)！比直接以 ${bestAsk || '--'}G 吃單共省下 ${formatNumber(diffVsInstant)}G。`,
+                    advice: `🟡 成功搶佔買單第 1 順位 (出價 ${formatPrice(price)})！比直接以 ${bestAsk ? formatPrice(bestAsk) : '--'} 吃單共省下 ${formatPrice(diffVsInstant)}。`,
                     instantPrice,
                     topMakerPrice,
                     taxRate,
@@ -799,7 +810,7 @@
                 etaHours,
                 diffTotal: diffVsInstant,
                 wagePerHour: wage,
-                advice: `🔴 前方有 ${formatNumber(aheadCount)} 件出價更高的買單排隊！建議提價至 ${topMakerPrice}G 搶排首檔。`,
+                advice: `🔴 前方有 ${formatNumber(aheadCount)} 件出價更高的買單排隊！建議提價至 ${formatPrice(topMakerPrice)} 搶排首檔。`,
                 instantPrice,
                 topMakerPrice,
                 taxRate,
@@ -820,7 +831,7 @@
                 etaHours: 0,
                 diffTotal: 0,
                 wagePerHour: 0,
-                advice: `🟢 賣價已達最高收購價 (${bestBid}G)，送出後將「立刻成交」換得金幣！`,
+                advice: `🟢 賣價已達最高收購價 (${formatPrice(bestBid)})，送出後將「立刻成交」換得金幣！`,
                 instantPrice,
                 topMakerPrice,
                 taxRate,
@@ -839,7 +850,7 @@
                 etaHours: estHours,
                 diffTotal,
                 wagePerHour: wage,
-                advice: `🟡 成功搶佔賣單第 1 順位 (定價 ${price}G，稅後實得 ${netAtUserPrice}G/件)！比直接吃單每件多賺 ${netAtUserPrice - netAtInstant}G。`,
+                advice: `🟡 成功搶佔賣單第 1 順位 (定價 ${formatPrice(price)}，稅後實得 ${formatPrice(netAtUserPrice)}/件)！比直接吃單每件多賺 ${formatPrice(netAtUserPrice - netAtInstant)}。`,
                 instantPrice,
                 topMakerPrice,
                 taxRate,
@@ -869,7 +880,7 @@
             etaHours,
             diffTotal,
             wagePerHour: wage,
-            advice: `🔴 前方有 ${formatNumber(aheadCount)} 件更低價的賣單排隊！建議降價至 ${topMakerPrice}G 搶排首檔，避免滯銷。`,
+            advice: `🔴 前方有 ${formatNumber(aheadCount)} 件更低價的賣單排隊！建議降價至 ${formatPrice(topMakerPrice)} 搶排首檔，避免滯銷。`,
             instantPrice,
             topMakerPrice,
             taxRate,
@@ -1014,7 +1025,7 @@
             const dumpNet = computeSellerNetPerItem(bestBid, gapInfo.taxRate);
             const makerNet = computeSellerNetPerItem(gapInfo.topMakerAsk, gapInfo.taxRate);
             const mmProfitText = gapInfo.marketMakingProfit > 0
-                ? `<span style="color: #34d399; font-weight: 600;">💰 做市利潤: ${gapInfo.topMakerBid}G 買入 ➔ ${gapInfo.topMakerAsk}G 賣出，稅後每件淨賺 +${gapInfo.marketMakingProfit}G</span>`
+                ? `<span style="color: #34d399; font-weight: 600;">💰 做市利潤: ${formatPrice(gapInfo.topMakerBid)} 買入 ➔ ${formatPrice(gapInfo.topMakerAsk)} 賣出，稅後每件淨賺 +${formatPrice(gapInfo.marketMakingProfit)}</span>`
                 : `<span style="color: #64748b;">⛔ 扣除 ${(gapInfo.taxRate * 100).toFixed(0)}% 交易稅後無做市搬磚空間</span>`;
 
             decisionGridHtml = `
@@ -1028,14 +1039,14 @@
                         <div class="mwi-adv-side-body">
                             <div class="mwi-adv-rec-price-row">
                                 <span class="mwi-adv-label">🎯 推薦買價:</span>
-                                <span class="mwi-adv-price buy">${gapInfo.topMakerBid} G</span>
-                                <span class="mwi-adv-saving">+1檔 (每件省 ${gapInfo.buySaving}G)</span>
+                                <span class="mwi-adv-price buy" title="${gapInfo.topMakerBid.toLocaleString()} G">${formatPrice(gapInfo.topMakerBid)}</span>
+                                <span class="mwi-adv-saving">+1檔 (每件省 ${formatPrice(gapInfo.buySaving)})</span>
                             </div>
                             <div class="mwi-adv-desc-row">
                                 ⚡ 速度：前排 <b>0</b> 件排隊，最優先被賣家撮合
                             </div>
                             <div class="mwi-adv-alt-row">
-                                💨 急需立刻拿到？直接吃單: <b>${bestAsk} G</b> (多付 ${gapInfo.buySaving}G)
+                                💨 急需立刻拿到？直接吃單: <b title="${bestAsk ? bestAsk.toLocaleString() + ' G' : ''}">${formatPrice(bestAsk)}</b> (多付 ${formatPrice(gapInfo.buySaving)})
                             </div>
                         </div>
                     </div>
@@ -1049,14 +1060,14 @@
                         <div class="mwi-adv-side-body">
                             <div class="mwi-adv-rec-price-row">
                                 <span class="mwi-adv-label">🎯 推薦賣價:</span>
-                                <span class="mwi-adv-price sell">${gapInfo.topMakerAsk} G</span>
-                                <span class="mwi-adv-saving">-1檔 (每件多賺 ${gapInfo.sellNetGain}G)</span>
+                                <span class="mwi-adv-price sell" title="${gapInfo.topMakerAsk.toLocaleString()} G">${formatPrice(gapInfo.topMakerAsk)}</span>
+                                <span class="mwi-adv-saving">-1檔 (每件多賺 ${formatPrice(gapInfo.sellNetGain)})</span>
                             </div>
                             <div class="mwi-adv-desc-row">
-                                ⚡ 速度：前排 <b>0</b> 件排隊，最優先被買家買走 (稅後實得 ${makerNet}G)
+                                ⚡ 速度：前排 <b>0</b> 件排隊，最優先被買家買走 (稅後實得 <b title="${makerNet.toLocaleString()} G">${formatPrice(makerNet)}</b>)
                             </div>
                             <div class="mwi-adv-alt-row">
-                                💨 急需立刻變現？直接賣出: <b>${bestBid} G</b> (實得 ${dumpNet}G)
+                                💨 急需立刻變現？直接賣出: <b title="${bestBid ? bestBid.toLocaleString() + ' G' : ''}">${formatPrice(bestBid)}</b> (實得 <b title="${dumpNet.toLocaleString()} G">${formatPrice(dumpNet)}</b>)
                             </div>
                         </div>
                     </div>
@@ -1076,7 +1087,7 @@
                 </div>
                 <div class="mwi-adv-metrics">
                     <span class="mwi-adv-tag">
-                        盤口價差: <b>${bestBid || "--"}</b> ↔ <b>${bestAsk || "--"}</b> (差 <b>${spreadGold}G</b>, <b>${spreadPct}%</b>)
+                        盤口價差: <b title="${bestBid ? bestBid.toLocaleString() + ' G' : ''}">${formatPrice(bestBid, false)}</b> ↔ <b title="${bestAsk ? bestAsk.toLocaleString() + ' G' : ''}">${formatPrice(bestAsk, false)}</b> (差 <b title="${spreadGold.toLocaleString()} G">${formatPrice(spreadGold)}</b>, <b>${spreadPct}%</b>)
                     </span>
                     <span class="mwi-adv-tag" style="color: #38bdf8; border-color: #0284c7;">
                         全服日均: <b>${dailyAvg >= 10 ? formatNumber(dailyAvg) : dailyAvg.toFixed(1)}/天</b>
@@ -1137,23 +1148,27 @@
             ticksHtml = `<div class="mwi-adv-ruler-tight">⚡ 連續相鄰檔位（無中間插隊空間）</div>`;
         } else if (gapInfo.gapCount <= 6) {
             ticksHtml = gapInfo.gapTicks.map(t => {
+                const tFormatted = formatPrice(t);
+                const tRaw = t.toLocaleString() + " G";
                 if (t === gapInfo.topMakerBid && t === gapInfo.topMakerAsk) {
-                    return `<span class="mwi-adv-tick-node dual-snip" title="買賣雙方搶先價: ${t}G">⭐${t} (買/賣首位)</span>`;
+                    return `<span class="mwi-adv-tick-node dual-snip" title="買賣雙方搶先價: ${tRaw}">⭐${tFormatted} (買/賣首位)</span>`;
                 } else if (t === gapInfo.topMakerBid) {
-                    return `<span class="mwi-adv-tick-node buy-snip" title="買方搶先價: ${t}G">⭐${t} (買)</span>`;
+                    return `<span class="mwi-adv-tick-node buy-snip" title="買方搶先價: ${tRaw}">⭐${tFormatted} (買)</span>`;
                 } else if (t === gapInfo.topMakerAsk) {
-                    return `<span class="mwi-adv-tick-node sell-snip" title="賣方搶先價: ${t}G">⭐${t} (賣)</span>`;
+                    return `<span class="mwi-adv-tick-node sell-snip" title="賣方搶先價: ${tRaw}">⭐${tFormatted} (賣)</span>`;
                 } else {
-                    return `<span class="mwi-adv-tick-node empty" title="空檔位: ${t}G">${t}</span>`;
+                    return `<span class="mwi-adv-tick-node empty" title="空檔位: ${tRaw}">${formatPrice(t, false)}</span>`;
                 }
             }).join('<span class="mwi-adv-tick-line"></span>');
         } else {
+            const bidFormatted = formatPrice(gapInfo.topMakerBid);
+            const askFormatted = formatPrice(gapInfo.topMakerAsk);
             ticksHtml = `
-                <span class="mwi-adv-tick-node buy-snip" title="買方搶先價: ${gapInfo.topMakerBid}G">⭐${gapInfo.topMakerBid} (買)</span>
+                <span class="mwi-adv-tick-node buy-snip" title="買方搶先價: ${gapInfo.topMakerBid.toLocaleString()} G">⭐${bidFormatted} (買)</span>
                 <span class="mwi-adv-tick-line"></span>
                 <span class="mwi-adv-tick-node empty" style="padding: 2px 8px;">... 中間 ${gapInfo.gapCount - 2} 檔真空 ...</span>
                 <span class="mwi-adv-tick-line"></span>
-                <span class="mwi-adv-tick-node sell-snip" title="賣方搶先價: ${gapInfo.topMakerAsk}G">⭐${gapInfo.topMakerAsk} (賣)</span>
+                <span class="mwi-adv-tick-node sell-snip" title="賣方搶先價: ${gapInfo.topMakerAsk.toLocaleString()} G">⭐${askFormatted} (賣)</span>
             `;
         }
 
@@ -1166,20 +1181,20 @@
             <div class="mwi-adv-bridge-header">
                 <span class="mwi-adv-bridge-status ${statusClass}">${statusText}</span>
                 <span class="mwi-adv-bridge-gap-info">
-                    盤口價差: <b>${gapInfo.bestBid}G</b> ↔ <b>${gapInfo.bestAsk}G</b> (差距 <b>${gapInfo.spreadGold}G</b>)
+                    盤口價差: <b title="${gapInfo.bestBid.toLocaleString()} G">${formatPrice(gapInfo.bestBid)}</b> ↔ <b title="${gapInfo.bestAsk.toLocaleString()} G">${formatPrice(gapInfo.bestAsk)}</b> (差距 <b title="${gapInfo.spreadGold.toLocaleString()} G">${formatPrice(gapInfo.spreadGold)}</b>)
                 </span>
             </div>
             <div class="mwi-adv-bridge-ruler">
                 <div class="mwi-adv-ruler-anchor bid">
                     <span class="mwi-adv-ruler-name">最高買價</span>
-                    <span class="mwi-adv-ruler-val">${gapInfo.bestBid} G</span>
+                    <span class="mwi-adv-ruler-val" title="${gapInfo.bestBid.toLocaleString()} G">${formatPrice(gapInfo.bestBid)}</span>
                 </div>
                 <div class="mwi-adv-ruler-track">
                     ${ticksHtml}
                 </div>
                 <div class="mwi-adv-ruler-anchor ask">
                     <span class="mwi-adv-ruler-name">最低賣價</span>
-                    <span class="mwi-adv-ruler-val">${gapInfo.bestAsk} G</span>
+                    <span class="mwi-adv-ruler-val" title="${gapInfo.bestAsk.toLocaleString()} G">${formatPrice(gapInfo.bestAsk)}</span>
                 </div>
             </div>
         `;
@@ -1203,7 +1218,7 @@
             const effectiveVol = idx === 0 ? blendedVol : (blendedVol * CONFIG.UNDERCUT_PENALTY_RATE);
             const etaHours = (aheadAsk + order.count) / Math.max(0.001, effectiveVol);
             const snipTag = (idx === 0 && gapInfo && gapInfo.topMakerAsk < order.price)
-                ? `[💡可插 ${gapInfo.topMakerAsk}G 搶首位]`
+                ? `[💡可插 ${formatPrice(gapInfo.topMakerAsk)} 搶首位]`
                 : null;
             applyBadgeToRow(order.trElement, aheadAsk, etaHours, order.isMine, snipTag);
             aheadAsk += order.count;
@@ -1215,7 +1230,7 @@
             const effectiveVol = idx === 0 ? blendedVol : (blendedVol * CONFIG.UNDERCUT_PENALTY_RATE);
             const etaHours = (aheadBid + order.count) / Math.max(0.001, effectiveVol);
             const snipTag = (idx === 0 && gapInfo && gapInfo.topMakerBid > order.price)
-                ? `[💡可插 ${gapInfo.topMakerBid}G 搶首位]`
+                ? `[💡可插 ${formatPrice(gapInfo.topMakerBid)} 搶首位]`
                 : null;
             applyBadgeToRow(order.trElement, aheadBid, etaHours, order.isMine, snipTag);
             aheadBid += order.count;
@@ -1365,15 +1380,15 @@
                     <div>隊列位置: <b style="color: ${statusColor}">${decision.tierText}</b></div>
                     <div>排隊深度: <b>${formatNumber(decision.aheadCount)}</b> 件</div>
                     <div>預計耗時: <b style="color: ${statusColor}">${formatTime(decision.etaHours)}</b></div>
-                    <div>${isBuy ? '比吃單省下' : '比吃單多賺'}: <b>${decision.diffTotal > 0 ? '+' : ''}${formatNumber(decision.diffTotal)} G</b></div>
+                    <div>${isBuy ? '比吃單省下' : '比吃單多賺'}: <b title="${decision.diffTotal.toLocaleString()} G">${decision.diffTotal > 0 ? '+' : ''}${formatPrice(decision.diffTotal)}</b></div>
                 </div>
                 <div class="mwi-adv-tick-info">
-                    <span>當前檔位增量 (Tick): <b>${decision.currentTick}G</b></span>
+                    <span>當前檔位增量 (Tick): <b title="${decision.currentTick.toLocaleString()} G">${formatPrice(decision.currentTick)}</b></span>
                     <span>全服日均: <b>${historyInfo?.dailyAvg >= 10 ? formatNumber(historyInfo.dailyAvg) : historyInfo?.dailyAvg.toFixed(1)}/天</b></span>
                 </div>
                 ${decision.status === "QUEUE" ? `
                     <div class="mwi-adv-wage-line">
-                        折合等待時薪: <b style="color: ${decision.wagePerHour < 50000 ? '#ef4444' : '#10b981'}">${formatNumber(decision.wagePerHour)} G/hr</b>
+                        折合等待時薪: <b style="color: ${decision.wagePerHour < 50000 ? '#ef4444' : '#10b981'}" title="${Math.round(decision.wagePerHour).toLocaleString()} G/hr">${formatPrice(decision.wagePerHour)}/hr</b>
                         ${decision.wagePerHour < 50000 && decision.etaHours > 3 ? '<span class="mwi-adv-warn-text">(時薪過低，排隊不划算)</span>' : ''}
                     </div>
                 ` : ''}
@@ -1383,12 +1398,12 @@
                 <div class="mwi-adv-quick-actions">
                     ${decision.instantPrice ? `
                         <button type="button" class="mwi-adv-quick-btn instant" data-price="${decision.instantPrice}">
-                            ${instantBtnLabel} (${decision.instantPrice}G)
+                            ${instantBtnLabel} (${formatPrice(decision.instantPrice)})
                         </button>
                     ` : ''}
                     ${decision.topMakerPrice ? `
                         <button type="button" class="mwi-adv-quick-btn maker" data-price="${decision.topMakerPrice}">
-                            ${makerBtnLabel} (${decision.topMakerPrice}G)
+                            ${makerBtnLabel} (${formatPrice(decision.topMakerPrice)})
                         </button>
                     ` : ''}
                 </div>

@@ -9,6 +9,7 @@ const {
     getItemTaxRate,
     computeSellerNetPerItem,
     formatNumber,
+    formatPrice,
     formatTime,
     calculateTradeDecision,
     isMarketplaceOrderModal,
@@ -344,6 +345,28 @@ describe("情境 6：時間與排隊時薪防禦格式化", () => {
         assert.strictEqual(formatNumber(8800), "8.8K");
         assert.strictEqual(formatNumber(2170000), "2.17M");
         assert.strictEqual(formatNumber(3500000000), "3.50B");
+    });
+
+    it("6.3 金幣價格格式化完整驗證 (M/K/B 單位與小數零修剪，完美相容正式機百萬級數值)", () => {
+        // 百萬級 (M)
+        assert.strictEqual(formatPrice(44000000), "44M");
+        assert.strictEqual(formatPrice(38400000), "38.4M");
+        assert.strictEqual(formatPrice(43200000), "43.2M");
+        assert.strictEqual(formatPrice(39200000), "39.2M");
+        assert.strictEqual(formatPrice(5600000), "5.6M");
+        assert.strictEqual(formatPrice(2170000), "2.17M");
+        assert.strictEqual(formatPrice(1000000), "1M");
+        assert.strictEqual(formatPrice(800000), "800K");
+        // 千級 (K)
+        assert.strictEqual(formatPrice(4800), "4.8K");
+        assert.strictEqual(formatPrice(1000), "1K");
+        // 百級與低價 (< 1000)
+        assert.strictEqual(formatPrice(67, true), "67G");
+        assert.strictEqual(formatPrice(67, false), "67");
+        assert.strictEqual(formatPrice(0, true), "0G");
+        assert.strictEqual(formatPrice(0, false), "0");
+        // 十億級 (B)
+        assert.strictEqual(formatPrice(1250000000), "1.25B");
     });
 });
 

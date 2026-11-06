@@ -63,7 +63,7 @@ def run_e2e_test():
         driver.execute_script(mock_api_script)
 
         # 3. 注入 MWI 交易決策顧問油猴腳本 (完全同真實瀏覽器運行)
-        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.8)...")
+        print("[E2E-Init] 注入 MWI 交易決策顧問 (v1.3.9)...")
         driver.execute_script(userscript_code)
         time.sleep(1)
 

@@ -347,7 +347,7 @@ describe("情境 6：時間與排隊時薪防禦格式化", () => {
         assert.strictEqual(formatNumber(3500000000), "3.50B");
     });
 
-    it("6.3 金幣價格格式化完整驗證 (M/K/B 單位與小數零修剪，完美相容正式機百萬級數值)", () => {
+    it("6.3 金幣價格格式化完整驗證 (M/B 單位與小數零修剪，<1M 保留真實整數防止 2152 與 2200 混淆)", () => {
         // 百萬級 (M)
         assert.strictEqual(formatPrice(44000000), "44M");
         assert.strictEqual(formatPrice(38400000), "38.4M");
@@ -356,10 +356,15 @@ describe("情境 6：時間與排隊時薪防禦格式化", () => {
         assert.strictEqual(formatPrice(5600000), "5.6M");
         assert.strictEqual(formatPrice(2170000), "2.17M");
         assert.strictEqual(formatPrice(1000000), "1M");
-        assert.strictEqual(formatPrice(800000), "800K");
-        // 千級 (K)
-        assert.strictEqual(formatPrice(4800), "4.8K");
-        assert.strictEqual(formatPrice(1000), "1K");
+        // 百萬以內 (<1M) 嚴格保留精確整數與千分位，禁止 K 四捨五入
+        assert.strictEqual(formatPrice(800000, true), "800,000G");
+        assert.strictEqual(formatPrice(800000, false), "800,000");
+        assert.strictEqual(formatPrice(4800, true), "4,800G");
+        assert.strictEqual(formatPrice(4800, false), "4,800");
+        assert.strictEqual(formatPrice(2200, false), "2,200");
+        assert.strictEqual(formatPrice(2152, false), "2,152");
+        assert.strictEqual(formatPrice(2153, false), "2,153");
+        assert.strictEqual(formatPrice(2199, false), "2,199");
         // 百級與低價 (< 1000)
         assert.strictEqual(formatPrice(67, true), "67G");
         assert.strictEqual(formatPrice(67, false), "67");

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MWI 交易決策顧問 (Market Trade Advisor)
 // @namespace    https://milkywayidle.com/
-// @version      1.3.9
-// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精簡高密度看板設計，一鍵收合，盤口百萬級大數自動轉換為 M / K / B 單位，全場景自動化 E2E 瀏覽器測試驗證。
+// @version      1.3.10
+// @description  銀河奶牛放置 (Milky Way Idle) 市場掛單時間預估與智能交易顧問。精簡高密度看板設計，一鍵收合，百萬級大數轉換為 M/B 單位且百萬以內嚴格保留真實整數防止 2.2K 混淆，全場景自動化 E2E 瀏覽器測試驗證。
 // @author       Antigravity
 // @homepage     https://github.com/jiamingla/mwi-market-advisor
 // @updateURL    https://raw.githubusercontent.com/jiamingla/mwi-market-advisor/master/mwi_market_advisor.user.js
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[MWI-Advisor] 交易決策顧問 v1.3.9 (盤口大數 M/K/B 單位格式化版) 啟動中...");
+    console.log("[MWI-Advisor] 交易決策顧問 v1.3.10 (百萬級 M 單位與百萬以內真實整數修正版) 啟動中...");
 
     // ── 1. 遊戲核心規則配置 (對齊 2026-09-28 最新改版) ─────
     const CONFIG = {
@@ -134,15 +134,14 @@
         return Math.round(num).toLocaleString();
     }
 
-    // 格式化金幣價格為簡明單位 (如 44M, 38.4M, 4.8K, 67G)，支援 title 屬性完整還原精確值
+    // 格式化金幣價格為簡明單位 (>=1M 採用 M/B 縮寫，<1M 嚴格保留精確整數與千分位，禁止 K 縮寫防止 2152 與 2200 混淆)
     function formatPrice(val, withGForSmall = true) {
         if (val === null || val === undefined || isNaN(val)) return "--";
         const num = Number(val);
         const abs = Math.abs(num);
         if (abs >= 1e9) return parseFloat((num / 1e9).toFixed(2)) + "B";
         if (abs >= 1e6) return parseFloat((num / 1e6).toFixed(2)) + "M";
-        if (abs >= 1e3) return parseFloat((num / 1e3).toFixed(1)) + "K";
-        return Math.round(num) + (withGForSmall ? "G" : "");
+        return Math.round(num).toLocaleString() + (withGForSmall ? "G" : "");
     }
 
     function formatTime(hours) {
@@ -1218,7 +1217,7 @@
             const effectiveVol = idx === 0 ? blendedVol : (blendedVol * CONFIG.UNDERCUT_PENALTY_RATE);
             const etaHours = (aheadAsk + order.count) / Math.max(0.001, effectiveVol);
             const snipTag = (idx === 0 && gapInfo && gapInfo.topMakerAsk < order.price)
-                ? `[💡可插 ${formatPrice(gapInfo.topMakerAsk)} 搶首位]`
+                ? `[💡可插 ${formatPrice(gapInfo.topMakerAsk, false)} 搶首位]`
                 : null;
             applyBadgeToRow(order.trElement, aheadAsk, etaHours, order.isMine, snipTag);
             aheadAsk += order.count;
@@ -1230,7 +1229,7 @@
             const effectiveVol = idx === 0 ? blendedVol : (blendedVol * CONFIG.UNDERCUT_PENALTY_RATE);
             const etaHours = (aheadBid + order.count) / Math.max(0.001, effectiveVol);
             const snipTag = (idx === 0 && gapInfo && gapInfo.topMakerBid > order.price)
-                ? `[💡可插 ${formatPrice(gapInfo.topMakerBid)} 搶首位]`
+                ? `[💡可插 ${formatPrice(gapInfo.topMakerBid, false)} 搶首位]`
                 : null;
             applyBadgeToRow(order.trElement, aheadBid, etaHours, order.isMine, snipTag);
             aheadBid += order.count;
